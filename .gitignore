@@ -1,0 +1,8 @@
+graphify-out/
+.photosort/
+__pycache__/
+*.pyc
+.venv/
+.env
+dist/
+build/
