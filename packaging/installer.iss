@@ -22,7 +22,7 @@ CloseApplications=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 [Files]
-Source: "..\dist\PhotoSort-0.2.0\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\PhotoSort-{#AppVersion}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
 Name: "{group}\PhotoSort"; Filename: "{app}\PhotoSort.exe"
 Name: "{autodesktop}\PhotoSort"; Filename: "{app}\PhotoSort.exe"; Tasks: desktopicon
