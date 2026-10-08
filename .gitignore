@@ -6,3 +6,5 @@ __pycache__/
 .env
 dist/
 build/
+target/
+node_modules/

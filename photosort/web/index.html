@@ -1,41 +1,446 @@
 <!doctype html>
 <html lang="ru">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PhotoSort — меньше кадров, больше смысла</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
-<body>
-<aside class="sidebar">
-  <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
-  <a class="brand" href="/"><span class="brand-icon">◈</span>PhotoSort<span class="version">01</span></a>
-  <div class="workspace"><span class="workspace-icon">▧</span><div>Моя библиотека<small>Локальное пространство</small></div><span class="workspace-dot"></span></div>
-  <p class="eyebrow side-label">БИБЛИОТЕКА</p>
-  <nav id="navigation">
-    <button data-view="all" class="nav-item active"><span class="nav-icon">▦</span>Все фотографии<b id="count-all">0</b></button>
-    <button data-view="favorites" class="nav-item"><span class="nav-icon">♡</span>Избранное<b id="count-favorites">0</b></button>
-    <p class="eyebrow side-label second-label">УМНЫЙ РАЗБОР</p>
-    <button data-view="similar" class="nav-item"><span class="nav-icon">▱</span>Похожие кадры<b id="count-similar">0</b></button>
-    <button data-view="bursts" class="nav-item"><span class="nav-icon">▤</span>Серии<b id="count-bursts">0</b></button>
-    <button data-view="duplicates" class="nav-item"><span class="nav-icon">▣</span>Точные дубли<b id="count-duplicates">0</b></button>
-    <div class="nav-divider"></div>
-    <button data-view="trash" class="nav-item"><span class="nav-icon">♧</span>Корзина<b id="count-trash">0</b></button>
-  </nav>
-  <div class="sidebar-bottom"><div class="privacy"><span>◉</span><div>Только на вашем устройстве<small>Ваши фотографии остаются вашими</small></div></div><button id="help" class="shortcuts">⌘ <span>Горячие клавиши</span><kbd>?</kbd></button><div class="profile"><span class="avatar">P</span><div>Личное пространство<small>PhotoSort / Local</small></div></div></div>
-</aside>
-<main>
-  <header class="topbar"><div class="breadcrumb">Библиотека <span>/</span> <strong id="crumb">Все фотографии</strong></div><div class="top-actions"><span class="local-status"><i></i> Локально</span><button class="icon-button" id="help-top" aria-label="Справка">?</button></div></header>
-  <section class="content">
-    <div class="page-heading"><div><p class="eyebrow">ВАШИ МОМЕНТЫ. БЕЗ ЛИШНЕГО.</p><h1 id="page-title">Все фотографии<span class="title-dot">.</span></h1><p id="subtitle">Освободите место для того, что хочется сохранить.</p></div><button class="button primary" id="import"><span>＋</span> Добавить папку</button></div>
-    <div class="stats"><div><span>В библиотеке</span><strong id="stat-total">0 <small>фото</small></strong><p id="stat-bytes">0 МБ на диске</p></div><div><span>Похожие кадры</span><strong id="stat-similar">0</strong><p>Найдите лучший в каждой группе</p></div><div><span>Точные дубли</span><strong id="stat-duplicates">0</strong><p>Совпадение содержимого SHA-256</p></div><div class="stat-favorite"><span>Ваш выбор</span><strong id="stat-favorites">0 <span>♡</span></strong><p>Кадры, которые стоит оставить</p></div></div>
-    <div id="scan-status" class="scan-status" hidden><span class="spinner"></span><div><strong id="scan-text"></strong><small id="scan-detail"></small></div><button id="stop-scan" class="button secondary">Остановить</button></div>
-    <div class="collection-toolbar"><div class="collection-title"><h2 id="collection-name">Коллекция</h2><span id="total-label">0 фотографий</span></div><div class="collection-controls"><label class="search"><span>⌕</span><input id="search" placeholder="Найти фотографию" aria-label="Поиск по имени"><kbd>/</kbd></label><select id="sort" aria-label="Сортировка"><option value="date">По дате</option><option value="name">По имени</option><option value="quality">По резкости</option><option value="size">По размеру</option></select><button class="icon-button" id="density" title="Размер превью" aria-label="Изменить размер превью">▦</button></div></div>
-    <div class="selection-bar" id="selection-bar" hidden><span id="selection-count"></span><button id="select-page">Выбрать страницу</button><button id="favorite-selected">♡ В избранное</button><button id="compare-selected">Сравнить</button><button id="trash-selected">В корзину</button><button id="clear-selection" aria-label="Снять выделение">✕</button></div>
-    <div id="view-hint" class="view-hint" hidden></div>
-    <div id="gallery" class="gallery"></div>
-    <div id="empty" class="empty"><div class="empty-art"><div class="frame back"></div><div class="frame front"><svg viewBox="0 0 180 130" aria-hidden="true"><circle cx="125" cy="34" r="13"/><path d="M0 115 54 47 92 90 120 64 180 130H0Z"/></svg></div></div><p class="eyebrow">ХОРОШИЕ КАДРЫ ЗАСЛУЖИВАЮТ ПОРЯДКА</p><h2 id="empty-title">Всё начинается с одной папки</h2><p id="empty-description">Добавьте фотографии. PhotoSort найдёт похожие кадры,<br>объединит серии и поможет оставить самое ценное.</p><button class="button primary" id="empty-import">＋ Выбрать папку</button><span class="formats">JPG · PNG · WEBP · TIFF · BMP</span></div>
-    <footer class="collection-footer"><span id="footer-text">Порядок начинается здесь</span><div class="pagination"><button id="previous" class="button secondary" disabled>← Назад</button><span id="page-number">01</span><button id="next" class="button secondary" disabled>Далее →</button></div><span>Выбирайте лучшее. Остальное подождёт.</span></footer>
-  </section>
-</main>
-<dialog id="import-dialog"><form id="import-form"><div class="dialog-heading"><span class="eyebrow">НОВАЯ КОЛЛЕКЦИЯ</span><button type="button" class="icon-button close-dialog" aria-label="Закрыть">✕</button></div><h2>Больше воспоминаний.<br>Меньше беспорядка.</h2><p>Укажите папку — мы прочитаем фотографии, включая вложенные папки. Оригиналы останутся на месте.</p><label class="field-label" for="folder-path">Папка с фотографиями</label><div class="folder-field"><input id="folder-path" placeholder="C:\Users\Вы\Pictures" required><button id="browse" type="button" class="button secondary">Обзор…</button></div><p class="dialog-note">Индекс и превью сохраняются локально. RAW и HEIC пока не поддерживаются.</p><button class="button primary full-width" type="submit">Добавить в библиотеку →</button></form></dialog>
-<dialog id="viewer"><div class="viewer-toolbar"><span id="viewer-title"></span><div><button id="viewer-favorite" class="button secondary">♡ Избранное</button><button class="icon-button close-dialog" aria-label="Закрыть">✕</button></div></div><div id="viewer-images"></div><div class="viewer-bottom"><button id="viewer-prev" class="button secondary">← Предыдущий</button><span>← → Переключение · F Избранное · Esc Закрыть</span><button id="viewer-next" class="button secondary">Следующий →</button></div></dialog>
-<dialog id="help-dialog"><div class="dialog-heading"><span class="eyebrow">БЫСТРЕЕ С КЛАВИАТУРОЙ</span><button class="icon-button close-dialog" aria-label="Закрыть">✕</button></div><h2>В вашем ритме.</h2><dl class="help-list"><dt>Поиск</dt><dd><kbd>/</kbd></dd><dt>Избранное в просмотре</dt><dd><kbd>F</kbd></dd><dt>Следующий / предыдущий кадр</dt><dd><kbd>←</kbd> <kbd>→</kbd></dd><dt>Снять выделение / закрыть</dt><dd><kbd>Esc</kbd></dd></dl><p>Нажмите на кадр, чтобы рассмотреть его. Отметьте два кадра галочками и нажмите «Сравнить». Удаление всегда перемещает файлы в корзину PhotoSort.</p></dialog>
-<dialog id="confirm-dialog"><h2>Переместить в корзину?</h2><p id="confirm-text"></p><div class="confirm-actions"><button id="cancel-trash" class="button secondary">Отмена</button><button id="confirm-trash" class="button primary">В корзину</button></div></dialog>
-<div id="toast" role="status" hidden></div>
-</body></html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PhotoSort — меньше кадров, больше смысла</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/update.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+      <a class="brand" href="/"
+        ><span class="brand-icon">◈</span>PhotoSort<span class="version"
+          >02</span
+        ></a
+      >
+      <div class="workspace">
+        <span class="workspace-icon">▧</span>
+        <div>Моя библиотека<small>Локальное пространство</small></div>
+        <span class="workspace-dot"></span>
+      </div>
+      <p class="eyebrow side-label">БИБЛИОТЕКА</p>
+      <nav id="navigation">
+        <button data-view="all" class="nav-item active">
+          <span class="nav-icon">▦</span>Все фотографии<b id="count-all">0</b>
+        </button>
+        <button data-view="favorites" class="nav-item">
+          <span class="nav-icon">♡</span>Избранное<b id="count-favorites">0</b>
+        </button>
+        <p class="eyebrow side-label second-label">УМНЫЙ РАЗБОР</p>
+        <button data-view="similar" class="nav-item">
+          <span class="nav-icon">▱</span>Похожие кадры<b id="count-similar"
+            >0</b
+          >
+        </button>
+        <button data-view="bursts" class="nav-item">
+          <span class="nav-icon">▤</span>Серии<b id="count-bursts">0</b>
+        </button>
+        <button data-view="duplicates" class="nav-item">
+          <span class="nav-icon">▣</span>Точные дубли<b id="count-duplicates"
+            >0</b
+          >
+        </button>
+        <div class="nav-divider"></div>
+        <button data-view="trash" class="nav-item">
+          <span class="nav-icon">♧</span>Корзина<b id="count-trash">0</b>
+        </button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="privacy">
+          <span>◉</span>
+          <div>
+            Только на вашем устройстве<small
+              >Ваши фотографии остаются вашими</small
+            >
+          </div>
+        </div>
+        <button id="help" class="shortcuts">
+          ⌘ <span>Горячие клавиши</span><kbd>?</kbd>
+        </button>
+        <div class="profile">
+          <span class="avatar">P</span>
+          <div>Личное пространство<small>PhotoSort / Local</small></div>
+        </div>
+      </div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div class="breadcrumb">
+          Библиотека <span>/</span> <strong id="crumb">Все фотографии</strong>
+        </div>
+        <div class="top-actions">
+          <span class="local-status"><i></i> Rust · Локально</span
+          ><button
+            class="icon-button"
+            id="undo"
+            aria-label="Отменить действие"
+            title="Ctrl+Z"
+          >
+            ↶</button
+          ><button class="icon-button" id="settings" aria-label="Настройки">
+            ⚙</button
+          ><button class="icon-button" id="help-top" aria-label="Справка">
+            ?
+          </button>
+        </div>
+      </header>
+      <section class="content">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">ВАШИ МОМЕНТЫ. БЕЗ ЛИШНЕГО.</p>
+            <h1 id="page-title">
+              Все фотографии<span class="title-dot">.</span>
+            </h1>
+            <p id="subtitle">
+              Освободите место для того, что хочется сохранить.
+            </p>
+          </div>
+          <button class="button primary" id="import">
+            <span>＋</span> Добавить папку
+          </button>
+        </div>
+        <div class="stats">
+          <div>
+            <span>В библиотеке</span
+            ><strong id="stat-total">0 <small>фото</small></strong>
+            <p id="stat-bytes">0 МБ на диске</p>
+          </div>
+          <div>
+            <span>Похожие кадры</span><strong id="stat-similar">0</strong>
+            <p>Найдите лучший в каждой группе</p>
+          </div>
+          <div>
+            <span>Точные дубли</span><strong id="stat-duplicates">0</strong>
+            <p>Совпадение содержимого SHA-256</p>
+          </div>
+          <div class="stat-favorite">
+            <span>Ваш выбор</span
+            ><strong id="stat-favorites">0 <span>♡</span></strong>
+            <p>Кадры, которые стоит оставить</p>
+          </div>
+        </div>
+        <div id="scan-status" class="scan-status" hidden>
+          <span class="spinner"></span>
+          <div>
+            <strong id="scan-text"></strong><small id="scan-detail"></small>
+          </div>
+          <button id="resume-scan" class="button primary" hidden>
+            Продолжить</button
+          ><button id="stop-scan" class="button secondary">Пауза</button>
+        </div>
+        <div class="workflow-toolbar">
+          <button class="button primary" id="start-cull">
+            ◈ Выбрать лучшие</button
+          ><button class="button secondary" id="duplicates-plan">
+            Разобрать дубли</button
+          ><button class="button secondary" id="export">Экспортировать</button
+          ><button class="button secondary" id="check-eyes">
+            Проверить лица</button
+          ><span id="review-progress"></span>
+        </div>
+        <div class="collection-toolbar">
+          <div class="collection-title">
+            <h2 id="collection-name">Коллекция</h2>
+            <span id="total-label">0 фотографий</span>
+          </div>
+          <div class="collection-controls">
+            <label class="search"
+              ><span>⌕</span
+              ><input
+                id="search"
+                placeholder="Найти фотографию"
+                aria-label="Поиск по имени"
+              /><kbd>/</kbd></label
+            ><select id="sort" aria-label="Сортировка">
+              <option value="date">По дате</option>
+              <option value="name">По имени</option>
+              <option value="quality">По резкости</option>
+              <option value="size">По размеру</option></select
+            ><button
+              class="icon-button"
+              id="density"
+              title="Размер превью"
+              aria-label="Изменить размер превью"
+            >
+              ▦
+            </button>
+          </div>
+        </div>
+        <div class="selection-bar" id="selection-bar" hidden>
+          <span id="selection-count"></span
+          ><button id="select-page">Выбрать страницу</button
+          ><button id="favorite-selected">♡ В избранное</button
+          ><button id="compare-selected">Сравнить</button
+          ><button id="keep-selected">Оставить</button
+          ><button id="reject-selected">Отклонить</button
+          ><button id="trash-selected">В корзину</button
+          ><button id="clear-selection" aria-label="Снять выделение">✕</button>
+        </div>
+        <div id="view-hint" class="view-hint" hidden></div>
+        <div id="gallery" class="gallery"></div>
+        <div id="empty" class="empty">
+          <div class="empty-art">
+            <div class="frame back"></div>
+            <div class="frame front">
+              <svg viewBox="0 0 180 130" aria-hidden="true">
+                <circle cx="125" cy="34" r="13" />
+                <path d="M0 115 54 47 92 90 120 64 180 130H0Z" />
+              </svg>
+            </div>
+          </div>
+          <p class="eyebrow">ХОРОШИЕ КАДРЫ ЗАСЛУЖИВАЮТ ПОРЯДКА</p>
+          <h2 id="empty-title">Всё начинается с одной папки</h2>
+          <p id="empty-description">
+            Добавьте фотографии. PhotoSort найдёт похожие кадры,<br />объединит
+            серии и поможет оставить самое ценное.
+          </p>
+          <button class="button primary" id="empty-import">
+            ＋ Выбрать папку</button
+          ><span class="formats">JPG · HEIC · RAW · PNG · WEBP · TIFF</span>
+        </div>
+        <footer class="collection-footer">
+          <span id="footer-text">Порядок начинается здесь</span>
+          <div class="pagination">
+            <button id="previous" class="button secondary" disabled>
+              ← Назад</button
+            ><span id="page-number">01</span
+            ><button id="next" class="button secondary" disabled>
+              Далее →
+            </button>
+          </div>
+          <span>Выбирайте лучшее. Остальное подождёт.</span>
+        </footer>
+      </section>
+    </main>
+    <dialog id="import-dialog">
+      <form id="import-form">
+        <div class="dialog-heading">
+          <span class="eyebrow">НОВАЯ КОЛЛЕКЦИЯ</span
+          ><button
+            type="button"
+            class="icon-button close-dialog"
+            aria-label="Закрыть"
+          >
+            ✕
+          </button>
+        </div>
+        <h2>Больше воспоминаний.<br />Меньше беспорядка.</h2>
+        <p>
+          Укажите папку — фотографии из вложенных папок попадут в библиотеку.
+          Незавершённое сканирование можно продолжить после перезапуска.
+        </p>
+        <label class="field-label" for="folder-path"
+          >Папка с фотографиями</label
+        >
+        <div class="folder-field">
+          <input
+            id="folder-path"
+            placeholder="C:\Users\Вы\Pictures"
+            required
+          /><button id="browse" type="button" class="button secondary">
+            Обзор…
+          </button>
+        </div>
+        <p class="dialog-note" id="codec-note">
+          JPEG · PNG · TIFF · WEBP · HEIC · RAW. RAW+JPEG объединяются при
+          выборе и экспорте.
+        </p>
+        <button class="button primary full-width" type="submit">
+          Добавить в библиотеку →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="viewer">
+      <div class="viewer-toolbar">
+        <span id="viewer-title"></span>
+        <div>
+          <button id="viewer-favorite" class="button secondary">
+            ♡ Избранное</button
+          ><button
+            id="fullscreen"
+            class="icon-button"
+            aria-label="Полный экран"
+          >
+            ⛶</button
+          ><button class="icon-button close-dialog" aria-label="Закрыть">
+            ✕
+          </button>
+        </div>
+      </div>
+      <div class="zoom-toolbar">
+        <button id="zoom-fit" class="button secondary">Вписать</button
+        ><button id="zoom-pixel" class="button secondary">1:1</button
+        ><label
+          >Масштаб
+          <input id="zoom" type="range" min="100" max="500" value="100" /><span
+            id="zoom-label"
+            >100%</span
+          ></label
+        ><label
+          ><input id="sync-zoom" type="checkbox" checked /> Синхронный
+          зум</label
+        >
+      </div>
+      <div id="viewer-images"></div>
+      <div id="filmstrip"></div>
+      <div id="cull-controls" hidden>
+        <span id="group-progress"></span
+        ><label
+          ><input type="checkbox" id="trash-others" /> Остальные в
+          корзину</label
+        ><button class="button primary" id="choose-winner">
+          Оставить этот · P</button
+        ><button class="button secondary" id="skip-group">
+          Пропустить группу · S
+        </button>
+      </div>
+      <div class="viewer-bottom">
+        <button id="viewer-prev" class="button secondary">← Предыдущий</button
+        ><span
+          >← → Кадры · P Оставить · X Отклонить · S Пропустить · Ctrl+Z
+          Отмена</span
+        ><button id="viewer-next" class="button secondary">Следующий →</button>
+      </div>
+    </dialog>
+    <dialog id="help-dialog">
+      <div class="dialog-heading">
+        <span class="eyebrow">БЫСТРЕЕ С КЛАВИАТУРОЙ</span
+        ><button class="icon-button close-dialog" aria-label="Закрыть">
+          ✕
+        </button>
+      </div>
+      <h2>В вашем ритме.</h2>
+      <dl class="help-list">
+        <dt>Поиск</dt>
+        <dd><kbd>/</kbd></dd>
+        <dt>Оставить / отклонить / пропустить</dt>
+        <dd><kbd>P</kbd> <kbd>X</kbd> <kbd>S</kbd></dd>
+        <dt>Отменить последнее действие</dt>
+        <dd><kbd>Ctrl</kbd> + <kbd>Z</kbd></dd>
+        <dt>Оставить / отклонить / пропустить</dt>
+        <dd><kbd>P</kbd> <kbd>X</kbd> <kbd>S</kbd></dd>
+        <dt>Отменить последнее действие</dt>
+        <dd><kbd>Ctrl</kbd> + <kbd>Z</kbd></dd>
+        <dt>Избранное в просмотре</dt>
+        <dd><kbd>F</kbd></dd>
+        <dt>Следующий / предыдущий кадр</dt>
+        <dd><kbd>←</kbd> <kbd>→</kbd></dd>
+        <dt>Снять выделение / закрыть</dt>
+        <dd><kbd>Esc</kbd></dd>
+      </dl>
+      <p>
+        Нажмите на кадр, чтобы рассмотреть его. Отметьте два кадра галочками и
+        нажмите «Сравнить». Удаление всегда перемещает файлы в корзину
+        PhotoSort.
+      </p>
+    </dialog>
+    <dialog id="confirm-dialog">
+      <h2>Переместить в корзину?</h2>
+      <p id="confirm-text"></p>
+      <div class="confirm-actions">
+        <button id="cancel-trash" class="button secondary">Отмена</button
+        ><button id="confirm-trash" class="button primary">В корзину</button>
+      </div>
+    </dialog>
+    <dialog id="settings-dialog">
+      <form id="settings-form">
+        <div class="dialog-heading">
+          <span class="eyebrow">ВАШЕ ПРОСТРАНСТВО</span
+          ><button
+            type="button"
+            class="icon-button close-dialog"
+            aria-label="Закрыть"
+          >
+            ✕
+          </button>
+        </div>
+        <h2>Настройте под себя.</h2>
+        <label class="field-label"
+          >Тема<select id="theme">
+            <option value="light">Светлая</option>
+            <option value="dark">Тёмная</option>
+            <option value="system">Системная</option>
+          </select></label
+        ><label class="field-label"
+          >Чувствительность сходства: <b id="sensitivity-label">6</b
+          ><input id="sensitivity" type="range" min="2" max="12" value="6"
+        /></label>
+        <p class="dialog-note">
+          Меньше — только близкие кадры. Больше — включая небольшие изменения и
+          обрезку. Группы будут пересчитаны.
+        </p>
+        <label class="field-label"
+          >Лимит кеша превью, МБ<input
+            id="cache-limit"
+            type="number"
+            min="32"
+            max="32768"
+            value="1024" /></label
+        ><label class="field-label"
+          >Предпочтительная папка для сохранения дублей<input
+            id="preferred-folder"
+            placeholder="C:\Photos\Originals" /></label
+        ><button class="button primary full-width">Сохранить настройки</button>
+      </form>
+    </dialog>
+    <dialog id="export-dialog">
+      <form id="export-form">
+        <div class="dialog-heading">
+          <span class="eyebrow">САМОЕ ЦЕННОЕ — С СОБОЙ</span
+          ><button
+            type="button"
+            class="icon-button close-dialog"
+            aria-label="Закрыть"
+          >
+            ✕
+          </button>
+        </div>
+        <h2>Экспорт лучших кадров.</h2>
+        <p id="export-scope"></p>
+        <label class="field-label">Папка экспорта</label>
+        <div class="folder-field">
+          <input
+            id="export-path"
+            required
+            placeholder="C:\Photos\Selected"
+          /><button type="button" id="browse-export" class="button secondary">
+            Обзор…
+          </button>
+        </div>
+        <label class="check-line"
+          ><input id="export-structure" type="checkbox" checked /> Сохранить
+          структуру папок</label
+        >
+        <p class="dialog-note">
+          Будут созданы проверенные копии. RAW+JPEG экспортируются вместе,
+          совпадающие имена не перезаписываются.
+        </p>
+        <button class="button primary full-width">
+          Скопировать фотографии →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="duplicates-dialog">
+      <div class="dialog-heading">
+        <span class="eyebrow">ТОЧНОЕ СОВПАДЕНИЕ</span
+        ><button class="icon-button close-dialog" aria-label="Закрыть">
+          ✕
+        </button>
+      </div>
+      <h2>Одна копия каждого момента.</h2>
+      <p id="duplicates-summary"></p>
+      <p class="dialog-note">
+        Приоритет: избранное, затем предпочтительная папка. Избранные копии
+        защищены. Перед перемещением сохраняемая копия проверяется повторно.
+      </p>
+      <div id="duplicates-list"></div>
+      <button id="apply-duplicates" class="button primary full-width">
+        Переместить лишние копии в корзину
+      </button>
+    </dialog>
+    <div id="toast" role="status" hidden></div>
+  </body>
+</html>

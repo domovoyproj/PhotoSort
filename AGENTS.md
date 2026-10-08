@@ -9,4 +9,6 @@ Use Graphify first for architecture, code relationships, and change-impact analy
 5. Run `python -m unittest discover -s tests -v` for changes to scanning or file operations and `node --check photosort/web/app.js` for frontend changes.
 6. File removal must remain recoverable. Never overwrite an existing file during restore. Preserve crash recovery and test it.
 
-Windows application: `python -m photosort.desktop`. Browser development: `python -m photosort.server --port 18765`. Release build: `packaging/build.ps1`.
+Current runtime is Rust. Run `cargo test --locked` for core changes as well as the legacy Python regression suite above. Validate the face worker with `node --check photosort/web/face-worker.js`. Python modules preserve 0.1 migration/regression behavior and are not the 0.2 runtime.
+
+Windows application: `cargo run --release`. Browser development: `cargo run -- --browser --port 18765 --data .photosort/dev`. Release build: `packaging/build.ps1`. On this machine without MSVC, use `cargo +stable-x86_64-pc-windows-gnu` with `.photosort/tools/mingw/mingw64/bin` on PATH. Keep `target/` ignored. Verify migrated databases and never delete the journal or original photos during cache cleanup.

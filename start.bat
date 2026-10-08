@@ -1,8 +1,8 @@
 @echo off
 cd /d "%~dp0"
-if exist .venv\Scripts\python.exe (
-  .venv\Scripts\python.exe -m photosort.desktop
+if exist dist\PhotoSort-0.2.0\PhotoSort.exe (
+  start "PhotoSort" dist\PhotoSort-0.2.0\PhotoSort.exe
 ) else (
-  python -m photosort.desktop
+  cargo run --release
 )
 if errorlevel 1 pause
