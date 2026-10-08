@@ -38,6 +38,7 @@ const titles = {
   all: "Все файлы",
   photos: "Фотографии",
   videos: "Видео",
+  pending: "Не разобраны",
   favorites: "Избранное",
   similar: "Похожие кадры",
   bursts: "Серии",
@@ -66,6 +67,18 @@ const state = {
   },
 };
 const number = (value) => Number(value || 0).toLocaleString("ru-RU");
+const fileWord = (value) => {
+  const count = Math.abs(Number(value || 0));
+  const lastTwo = count % 100;
+  if (lastTwo >= 11 && lastTwo <= 14) return "файлов";
+  switch (count % 10) {
+    case 1: return "файл";
+    case 2:
+    case 3:
+    case 4: return "файла";
+    default: return "файлов";
+  }
+};
 const duration = (seconds) => {
   const total = Math.max(0, Math.round(seconds || 0));
   const hours = Math.floor(total / 3600);
@@ -146,6 +159,19 @@ function applyTheme() {
 async function status() {
   const info = await api("/api/status");
   state.settings = info.settings;
+  const rootFilter = $("#root-filter");
+  const previousRoot = rootFilter.value || info.settings.ui_state?.root || "";
+  const roots = info.roots || [];
+  rootFilter.replaceChildren(new Option("Все папки", ""));
+  for (const root of roots) {
+    const parts = root.replaceAll("\\", "/").split("/").filter(Boolean);
+    const option = new Option(parts.slice(-2).join("/"), root);
+    option.title = root;
+    rootFilter.add(option);
+  }
+  rootFilter.value = roots.includes(previousRoot) ? previousRoot : "";
+  rootFilter.hidden = roots.length < 2 && !rootFilter.value;
+  rootFilter.title = rootFilter.value || "Показывать файлы из папки";
   applyTheme();
   $("#undo").disabled = !info.undo;
   $("#undo").title = info.undo
@@ -166,6 +192,7 @@ function persist() {
         offset: state.offset,
         sort: $("#sort").value,
         search: $("#search").value,
+        root: $("#root-filter").value,
         cullKind: state.cullKind || "similar",
       };
       await api("/api/settings", state.settings);
@@ -302,6 +329,7 @@ async function load() {
       offset: state.offset,
       search: $("#search").value,
       sort: $("#sort").value,
+      root: $("#root-filter").value,
     });
     const data = await api(`/api/photos?${query}`);
     if (request !== state.request) return;
@@ -315,7 +343,7 @@ async function load() {
       $(`#count-${key}`).textContent = number(data.counts[key]);
     $("#stat-total").replaceChildren(
       document.createTextNode(number(data.counts.all) + " "),
-      element("small", "", "файлов"),
+      element("small", "", fileWord(data.counts.all)),
     );
     $("#stat-similar").textContent = number(data.counts.similar);
     $("#stat-duplicates").textContent = number(data.counts.duplicates);
@@ -324,7 +352,7 @@ async function load() {
       element("span", "", "♡"),
     );
     $("#stat-bytes").textContent = `${size(data.counts.bytes)} на диске`;
-    $("#total-label").textContent = `${number(data.total)} файлов`;
+    $("#total-label").textContent = `${number(data.total)} ${fileWord(data.total)}`;
     $("#gallery").replaceChildren(...state.displayPhotos.map(card));
     $("#empty").hidden = data.total !== 0;
     const first =
@@ -346,7 +374,7 @@ async function load() {
       Math.floor(state.offset / 80) + 1,
     ).padStart(2, "0");
     $("#footer-text").textContent = data.total
-      ? `${state.offset + 1}–${Math.min(state.offset + 80, data.total)} из ${number(data.total)} файлов`
+      ? `${state.offset + 1}–${Math.min(state.offset + 80, data.total)} из ${number(data.total)}`
       : "Порядок начинается здесь";
     $("#review-progress").textContent = data.counts.all
       ? `Осталось разобрать: ${number(data.counts.pending)}`
@@ -361,7 +389,7 @@ function progress(data) {
   state.running = data.running;
   $("#scan-status").hidden = !data.running && !data.paused;
   $("#scan-text").textContent =
-    `${data.paused ? "На паузе · " : ""}Обработано ${number(data.done)}${data.total ? ` из ${number(data.total)}` : ""} файлов`;
+    `${data.paused ? "На паузе · " : ""}Обработано: ${number(data.done)}${data.total ? ` из ${number(data.total)}` : ""}`;
   $("#scan-detail").textContent =
     `${data.message}${data.errors ? ` · ошибок: ${data.errors}` : ""}`;
   $("#stop-scan").hidden = !data.running;
@@ -387,6 +415,8 @@ function setView(viewName, save = true) {
       "Фото сравниваются по отпечаткам изображения, видео — по трём кадрам и длительности. Сходство — подсказка: проверяйте содержимое перед выбором.",
     videos:
       "Видео обрабатывается локально. Если кодек не поддерживается проигрывателем, подготовьте совместимое превью; оригинал останется без изменений.",
+    pending:
+      "Здесь фото и видео без вашего решения. Нажмите P, чтобы оставить, X — чтобы отклонить, или S — чтобы пропустить.",
     bursts:
       "Кадры из одной папки с интервалом до 8 секунд по EXIF. RAW+JPEG выбираются вместе.",
     duplicates:
@@ -796,6 +826,13 @@ $("#search").oninput = () => {
 $("#sort").onchange = () => {
   state.offset = 0;
   state.selected.clear();
+  load();
+  persist();
+};
+$("#root-filter").onchange = () => {
+  state.offset = 0;
+  state.selected.clear();
+  $("#root-filter").title = $("#root-filter").value || "Показывать файлы из папки";
   load();
   persist();
 };

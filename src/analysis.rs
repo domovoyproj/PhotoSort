@@ -239,19 +239,7 @@ pub(crate) fn describe_image(
     if brightness > 225.0 {
         reasons.push("Светлый кадр")
     }
-    let temporary = thumb.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
-    image
-        .thumbnail(640, 480)
-        .to_rgb8()
-        .save_with_format(&temporary, image::ImageFormat::Jpeg)?;
-    std::fs::rename(&temporary, thumb).or_else(|error| {
-        if thumb.exists() {
-            let _ = std::fs::remove_file(&temporary);
-            Ok(())
-        } else {
-            Err(error)
-        }
-    })?;
+    save_thumbnail(&image, thumb)?;
     Ok(Description {
         width,
         height,
@@ -267,6 +255,22 @@ pub(crate) fn describe_image(
         fps: 0.0,
         video_codec: String::new(),
     })
+}
+pub(crate) fn save_thumbnail(image: &DynamicImage, thumb: &Path) -> Result<()> {
+    let temporary = thumb.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+    image
+        .thumbnail(640, 480)
+        .to_rgb8()
+        .save_with_format(&temporary, image::ImageFormat::Jpeg)?;
+    std::fs::rename(&temporary, thumb).or_else(|error| {
+        if thumb.exists() {
+            let _ = std::fs::remove_file(&temporary);
+            Ok(())
+        } else {
+            Err(error)
+        }
+    })?;
+    Ok(())
 }
 pub fn orient(image: DynamicImage, orientation: u32) -> DynamicImage {
     match orientation {

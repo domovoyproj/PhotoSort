@@ -251,11 +251,12 @@ fn route(library: &Arc<Library>, token: &str, request: &mut Request) -> Result<(
             "/api/session" => {
                 json!({"token":token,"version":env!("CARGO_PKG_VERSION"),"engine":"Rust"})
             }
-            "/api/photos" => library.listing(
+            "/api/photos" => library.listing_filtered(
                 &get("view", "all"),
                 &get("search", ""),
                 get("offset", "0").parse().unwrap_or(0),
                 &get("sort", "date"),
+                &get("root", ""),
             )?,
             "/api/progress" => serde_json::to_value(library.progress.lock().clone())?,
             "/api/status" => library.status()?,

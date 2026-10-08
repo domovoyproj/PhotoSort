@@ -289,6 +289,20 @@ fn video_compatible_preview_and_http_seek_do_not_modify_original() {
         .unwrap();
     let original = fs::read(&source).unwrap();
     let before = fs::metadata(&source).unwrap().modified().unwrap();
+    let poster = f.library.thumbs.join(format!("{}.jpg", photo.hash));
+    fs::remove_file(&poster).unwrap();
+    f.scan();
+    assert!(
+        !poster.exists(),
+        "Scanning should not decode unchanged video again"
+    );
+    assert!(
+        f.library
+            .thumbnail(photo.id)
+            .unwrap()
+            .starts_with(&[0xff, 0xd8])
+    );
+    assert_eq!(f.library.photo(photo.id).unwrap().hash, photo.hash);
     let url = photosort::server::serve(f.library.clone(), 0).unwrap();
     let host = url.trim_start_matches("http://");
     let route = format!("/video/{}", photo.id);
@@ -326,6 +340,45 @@ fn video_compatible_preview_and_http_seek_do_not_modify_original() {
             .and_then(|s| s.to_str())
             != Some("part"))
     );
+}
+#[test]
+fn folder_filter_and_pending_view_keep_library_counts() {
+    let f = Fixture::new();
+    f.image("first.jpg", 1);
+    f.scan();
+    let second = f._temp.path().join("second-root");
+    fs::create_dir(&second).unwrap();
+    let source = f.image("source.jpg", 2);
+    fs::rename(source, second.join("second.jpg")).unwrap();
+    f.library.start(second.to_str().unwrap(), false).unwrap();
+    f.wait();
+    assert_eq!(f.library.progress.lock().errors, 0);
+    let all = f.photos("all");
+    let root1 = all.iter().find(|p| p["name"] == "first.jpg").unwrap()["root"]
+        .as_str()
+        .unwrap();
+    let root2 = all.iter().find(|p| p["name"] == "second.jpg").unwrap()["root"]
+        .as_str()
+        .unwrap();
+    let first = f
+        .library
+        .listing_filtered("all", "", 0, "name", &root1)
+        .unwrap();
+    let other = f
+        .library
+        .listing_filtered("pending", "", 0, "name", &root2)
+        .unwrap();
+    assert_eq!(first["total"], 1);
+    assert_eq!(other["total"], 1);
+    assert_eq!(first["counts"]["all"], 2);
+    assert_eq!(other["counts"]["pending"], 2);
+    assert_eq!(
+        f.library
+            .listing_filtered("all", "", 0, "name", "'")
+            .unwrap()["total"],
+        0
+    );
+    assert_eq!(f.library.listing("all", "", 0, "name").unwrap()["total"], 2);
 }
 #[test]
 #[ignore = "Requires bundled FFmpeg; release pipeline runs this test"]

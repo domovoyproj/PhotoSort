@@ -448,17 +448,15 @@ impl Library {
                 break;
             }
             let old: HashMap<String, Photo> = {
-                let mut map = HashMap::new();
-                for path in &paths {
-                    if let Ok(photo) = self.db.lock().query_row(
-                        &format!("SELECT {COLUMNS} FROM photos WHERE path=? AND ahash!='' AND crop_hash!=''"),
-                        [path],
-                        photo_row,
-                    ) {
-                        map.insert(path.clone(), photo);
-                    }
-                }
-                map
+                let db = self.db.lock();
+                let placeholders = vec!["?"; paths.len()].join(",");
+                let mut statement = db.prepare(&format!(
+                    "SELECT {COLUMNS} FROM photos WHERE path IN ({placeholders}) AND ahash!='' AND crop_hash!=''"
+                ))?;
+                statement
+                    .query_map(rusqlite::params_from_iter(paths.iter()), photo_row)?
+                    .map(|row| row.map(|photo| (photo.path.clone(), photo)))
+                    .collect::<rusqlite::Result<_>>()?
             };
             let results: Vec<_> = pool.install(|| {
                 paths
@@ -479,11 +477,13 @@ impl Library {
                                 if p.trash.is_some() {
                                     return Ok(None);
                                 }
-                                if p.mtime == mtime
-                                    && p.size == size
-                                    && self.thumbs.join(format!("{}.jpg", p.hash)).exists()
-                                {
-                                    return Ok(None);
+                                if p.mtime == mtime && p.size == size {
+                                    if self.thumbs.join(format!("{}.jpg", p.hash)).exists() {
+                                        return Ok(None);
+                                    }
+                                    if analysis::fingerprint(path)? == p.hash {
+                                        return Ok(None);
+                                    }
                                 }
                             }
                             let hash = analysis::fingerprint(path)?;
@@ -788,6 +788,16 @@ impl Library {
         Ok(value)
     }
     pub fn listing(&self, view: &str, search: &str, offset: i64, sort: &str) -> Result<Value> {
+        self.listing_filtered(view, search, offset, sort, "")
+    }
+    pub fn listing_filtered(
+        &self,
+        view: &str,
+        search: &str,
+        offset: i64,
+        sort: &str,
+        root: &str,
+    ) -> Result<Value> {
         let field = match view {
             "duplicates" => Some("hash"),
             "similar" => Some("similar"),
@@ -807,7 +817,7 @@ impl Library {
                 " AND {field} IN(SELECT {field} FROM photos WHERE {ACTIVE} GROUP BY {field} HAVING COUNT(*)>1)"
             )
         }
-        condition += " AND instr(lower(name),lower(?))>0";
+        condition += " AND instr(lower(name),lower(?))>0 AND (?='' OR root=?)";
         let order = match sort {
             "name" => "name COLLATE NOCASE",
             "quality" => "sharpness DESC",
@@ -821,10 +831,10 @@ impl Library {
         };
         let total: i64 = self.db.lock().query_row(
             &format!("SELECT COUNT(*) FROM photos WHERE {condition}"),
-            [search],
+            params![search, root, root],
             |r| r.get(0),
         )?;
-        let photos=self.photos_sql(&format!("SELECT {COLUMNS} FROM photos WHERE {condition} ORDER BY {order},id LIMIT 80 OFFSET ?"),&[&search,&offset.max(0)])?;
+        let photos=self.photos_sql(&format!("SELECT {COLUMNS} FROM photos WHERE {condition} ORDER BY {order},id LIMIT 80 OFFSET ?"),&[&search,&root,&root,&offset.max(0)])?;
         Ok(
             json!({"photos":photos,"total":total,"counts":self.counts()?,"progress":self.progress.lock().clone()}),
         )
@@ -1310,7 +1320,21 @@ impl Library {
         let generated = !path.exists();
         if generated {
             let source = Path::new(photo.trash.as_deref().unwrap_or(&photo.path));
-            analysis::describe(source, &path, &self.data.join("scratch"))?;
+            if photo.media_kind == "video" {
+                let before = fs::metadata(source)?;
+                if before.len() != photo.size as u64 || modified(&before) != photo.mtime {
+                    bail!("Видео изменилось. Повторите импорт папки");
+                }
+                let frame =
+                    crate::video::frame(source, &self.data.join("scratch"), photo.duration * 0.5)?;
+                let after = fs::metadata(source)?;
+                if after.len() != before.len() || modified(&after) != modified(&before) {
+                    bail!("Видео изменилось во время создания превью");
+                }
+                analysis::save_thumbnail(&frame, &path)?;
+            } else {
+                analysis::describe(source, &path, &self.data.join("scratch"))?;
+            }
         }
         let bytes = fs::read(path)?;
         if generated && self.cache_writes.fetch_add(1, Ordering::Relaxed) % 64 == 63 {

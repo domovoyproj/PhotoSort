@@ -42,7 +42,7 @@
       </div>
       <a class="brand" href="/"
         ><span class="brand-icon">◈</span>PhotoSort<span class="version"
-          >03</span
+          >04</span
         ></a
       >
       <div class="workspace">
@@ -61,10 +61,13 @@
         <button data-view="videos" class="nav-item">
           <span class="nav-icon">▷</span>Видео<b id="count-videos">0</b>
         </button>
+        <button data-view="pending" class="nav-item">
+          <span class="nav-icon">◷</span>Не разобраны<b id="count-pending">0</b>
+        </button>
         <button data-view="favorites" class="nav-item">
           <span class="nav-icon">♡</span>Избранное<b id="count-favorites">0</b>
         </button>
-        <p class="eyebrow side-label second-label">УМНЫЙ РАЗБОР</p>
+        <p class="eyebrow side-label second-label">РАЗБОР КОЛЛЕКЦИИ</p>
         <button data-view="similar" class="nav-item">
           <span class="nav-icon">▱</span>Похожие кадры<b id="count-similar"
             >0</b
@@ -180,6 +183,9 @@
             <span id="total-label">0 файлов</span>
           </div>
           <div class="collection-controls">
+            <select id="root-filter" aria-label="Фильтр по папке" title="Показывать файлы из папки" hidden>
+              <option value="">Все папки</option>
+            </select>
             <label class="search"
               ><span>⌕</span
               ><input
