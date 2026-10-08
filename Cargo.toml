@@ -1,6 +1,6 @@
 [package]
 name = "photosort"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
 
@@ -12,7 +12,7 @@ desktop = ["dep:tao", "dep:wry"]
 anyhow = "1"
 chrono = "0.4"
 fs2 = "0.4"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "tiff", "bmp"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "tiff", "bmp", "ico"] }
 kamadak-exif = "0.6"
 parking_lot = "0.12"
 rayon = "1.11"
@@ -33,6 +33,9 @@ wry = { version = "0.57", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+
+[build-dependencies]
+winresource = "0.1.31"
 
 [profile.release]
 lto = "thin"

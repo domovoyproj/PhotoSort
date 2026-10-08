@@ -4,13 +4,42 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PhotoSort — меньше кадров, больше смысла</title>
+    <link rel="icon" href="/icon.ico" />
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/update.css" />
     <script src="/app.js" defer></script>
   </head>
   <body>
     <aside class="sidebar">
-      <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="window-dots" role="group" aria-label="Управление окном">
+        <button
+          type="button"
+          data-window-command="close"
+          aria-label="Закрыть окно"
+          title="Закрыть окно"
+          disabled
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+        <button
+          type="button"
+          data-window-command="minimize"
+          aria-label="Свернуть окно"
+          title="Свернуть окно"
+          disabled
+        >
+          <span aria-hidden="true">−</span>
+        </button>
+        <button
+          type="button"
+          data-window-command="maximize"
+          aria-label="Развернуть / восстановить окно"
+          title="Развернуть / восстановить окно"
+          disabled
+        >
+          <span aria-hidden="true">↗</span>
+        </button>
+      </div>
       <a class="brand" href="/"
         ><span class="brand-icon">◈</span>PhotoSort<span class="version"
           >02</span

@@ -63,31 +63,86 @@ fn run() -> Result<()> {
         use tao::{
             dpi::LogicalSize,
             event::{Event, WindowEvent},
-            event_loop::{ControlFlow, EventLoop},
-            window::WindowBuilder,
+            event_loop::{ControlFlow, EventLoopBuilder},
+            window::{Icon, ResizeDirection, WindowBuilder},
         };
-        let event_loop = EventLoop::new();
+        #[derive(Debug)]
+        enum WindowCommand {
+            Close,
+            Minimize,
+            Maximize,
+            Drag,
+            Resize(ResizeDirection),
+        }
+        let event_loop = EventLoopBuilder::<WindowCommand>::with_user_event().build();
+        let icon =
+            image::load_from_memory(include_bytes!("../packaging/photosort.ico"))?.into_rgba8();
+        let (width, height) = icon.dimensions();
         let window = WindowBuilder::new()
             .with_title("PhotoSort")
+            .with_decorations(false)
+            .with_window_icon(Some(Icon::from_rgba(icon.into_raw(), width, height)?))
             .with_inner_size(LogicalSize::new(1440.0, 940.0))
             .with_min_inner_size(LogicalSize::new(860.0, 640.0))
             .build(&event_loop)?;
         let origin = url.clone();
+        let ipc_origin = url.clone();
+        let proxy = event_loop.create_proxy();
         let _webview = wry::WebViewBuilder::new()
             .with_url(&url)
+            .with_initialization_script(
+                "Object.defineProperty(window, '__PHOTOSORT_DESKTOP__', {value: true});",
+            )
+            .with_ipc_handler(move |request| {
+                let source = request.uri().to_string();
+                if source != ipc_origin && !source.starts_with(&format!("{ipc_origin}/")) {
+                    return;
+                }
+                let command = match request.body().as_str() {
+                    "close" => WindowCommand::Close,
+                    "minimize" => WindowCommand::Minimize,
+                    "maximize" => WindowCommand::Maximize,
+                    "drag" => WindowCommand::Drag,
+                    "resize:n" => WindowCommand::Resize(ResizeDirection::North),
+                    "resize:s" => WindowCommand::Resize(ResizeDirection::South),
+                    "resize:e" => WindowCommand::Resize(ResizeDirection::East),
+                    "resize:w" => WindowCommand::Resize(ResizeDirection::West),
+                    "resize:ne" => WindowCommand::Resize(ResizeDirection::NorthEast),
+                    "resize:nw" => WindowCommand::Resize(ResizeDirection::NorthWest),
+                    "resize:se" => WindowCommand::Resize(ResizeDirection::SouthEast),
+                    "resize:sw" => WindowCommand::Resize(ResizeDirection::SouthWest),
+                    _ => return,
+                };
+                let _ = proxy.send_event(command);
+            })
             .with_navigation_handler(move |target| {
                 target.starts_with(&format!("{origin}/")) || target == origin
             })
             .build(&window)?;
         event_loop.run(move |event, _, flow| {
             *flow = ControlFlow::Wait;
-            if let Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } = event
-            {
-                library.close();
-                *flow = ControlFlow::Exit
+            match event {
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                }
+                | Event::UserEvent(WindowCommand::Close) => {
+                    library.close();
+                    *flow = ControlFlow::Exit;
+                }
+                Event::UserEvent(WindowCommand::Minimize) => window.set_minimized(true),
+                Event::UserEvent(WindowCommand::Maximize) => {
+                    window.set_maximized(!window.is_maximized());
+                }
+                Event::UserEvent(WindowCommand::Drag) => {
+                    let _ = window.drag_window();
+                }
+                Event::UserEvent(WindowCommand::Resize(direction)) => {
+                    if !window.is_maximized() {
+                        let _ = window.drag_resize_window(direction);
+                    }
+                }
+                _ => {}
             }
         });
     }

@@ -1,4 +1,39 @@
 const $ = (selector) => document.querySelector(selector);
+const desktopWindow = Boolean(
+  window.__PHOTOSORT_DESKTOP__ && window.ipc?.postMessage,
+);
+function windowCommand(command) {
+  if (desktopWindow) window.ipc.postMessage(command);
+}
+document.body.classList.toggle("desktop-window", desktopWindow);
+document.querySelectorAll("[data-window-command]").forEach((button) => {
+  button.disabled = !desktopWindow;
+  button.onclick = () => windowCommand(button.dataset.windowCommand);
+});
+if (desktopWindow) {
+  document.querySelectorAll(".window-dots, .topbar").forEach((region) => {
+    region.addEventListener("mousedown", (event) => {
+      if (
+        event.button !== 0 ||
+        event.target.closest("button, a, input, select")
+      )
+        return;
+      event.preventDefault();
+      windowCommand(event.detail === 2 ? "maximize" : "drag");
+    });
+  });
+  for (const direction of ["n", "s", "e", "w", "ne", "nw", "se", "sw"]) {
+    const edge = document.createElement("div");
+    edge.className = `window-resize window-resize-${direction}`;
+    edge.setAttribute("aria-hidden", "true");
+    edge.onpointerdown = (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      windowCommand(`resize:${direction}`);
+    };
+    document.body.append(edge);
+  }
+}
 const titles = {
   all: "Все фотографии",
   favorites: "Избранное",

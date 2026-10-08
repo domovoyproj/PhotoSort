@@ -203,6 +203,106 @@
   pointer-events: none;
   opacity: 0.6;
 }
+.window-dots {
+  min-height: 12px;
+  user-select: none;
+}
+.window-dots button {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #c9c9c6;
+  background: #d4d4d1;
+  color: #444;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  line-height: 1;
+}
+.window-dots button:first-child {
+  background: #393939;
+  border-color: #393939;
+  color: #fff;
+}
+.window-dots button::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+.window-dots button span {
+  opacity: 0;
+}
+.window-dots:hover button:not(:disabled) span,
+.window-dots button:focus-visible span {
+  opacity: 1;
+}
+.window-dots button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.desktop-window .topbar {
+  user-select: none;
+}
+.window-resize {
+  position: fixed;
+  z-index: 100;
+  touch-action: none;
+}
+.window-resize-n,
+.window-resize-s {
+  left: 6px;
+  right: 6px;
+  height: 5px;
+  cursor: ns-resize;
+}
+.window-resize-n {
+  top: 0;
+}
+.window-resize-s {
+  bottom: 0;
+}
+.window-resize-e,
+.window-resize-w {
+  top: 6px;
+  bottom: 6px;
+  width: 5px;
+  cursor: ew-resize;
+}
+.window-resize-e {
+  right: 0;
+}
+.window-resize-w {
+  left: 0;
+}
+.window-resize-ne,
+.window-resize-nw,
+.window-resize-se,
+.window-resize-sw {
+  width: 6px;
+  height: 6px;
+}
+.window-resize-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.window-resize-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.window-resize-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.window-resize-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
 body.theme-dark {
   background: #161616;
   color: #ececeb;
@@ -212,12 +312,14 @@ body.theme-dark {
   background: #1e1e1e;
   border-color: #303030;
 }
-.theme-dark .window-dots i {
+.theme-dark .window-dots button {
   background: #555;
   border-color: #555;
 }
-.theme-dark .window-dots i:first-child {
+.theme-dark .window-dots button:first-child {
   background: #ccc;
+  border-color: #ccc;
+  color: #222;
 }
 .theme-dark .brand-icon {
   background: #ddd;

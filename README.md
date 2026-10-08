@@ -4,7 +4,7 @@
 
 ## Запуск
 
-Установите `PhotoSort-Setup-0.2.0-windows-x64.exe` или распакуйте portable-архив целиком и запустите `PhotoSort.exe`. Требуется Windows 10/11 x64 и Microsoft Edge WebView2 Runtime. Установщик добавляет WebView2 при отсутствии (для загрузки Runtime нужен интернет). Для portable-комплекта предусмотрен MicrosoftEdgeWebview2Setup.exe. Python для запуска не нужен. Фотографии и анализ остаются на устройстве.
+Установите `PhotoSort-Setup-0.2.1-windows-x64.exe` или распакуйте portable-архив целиком и запустите `PhotoSort.exe`. Требуется Windows 10/11 x64 и Microsoft Edge WebView2 Runtime. Установщик добавляет WebView2 при отсутствии (для загрузки Runtime нужен интернет). Для portable-комплекта предусмотрен MicrosoftEdgeWebview2Setup.exe. Python для запуска не нужен. Фотографии и анализ остаются на устройстве.
 
 Для разработки нужен Rust и Windows C++ toolchain:
 
@@ -15,7 +15,7 @@ cargo run --release
 cargo run -- --browser --port 18766 --data .photosort/dev
 ```
 
-На текущем компьютере без Visual Studio используется установленный в `.photosort/tools/mingw/mingw64/bin` GNU toolchain и `cargo +stable-x86_64-pc-windows-gnu`. Каталог `bin` должен присутствовать в PATH. `start.bat` запускает собранное приложение из `dist/PhotoSort-0.2.0`.
+На текущем компьютере без Visual Studio используется установленный в `.photosort/tools/mingw/mingw64/bin` GNU toolchain и `cargo +stable-x86_64-pc-windows-gnu`. Каталог `bin` должен присутствовать в PATH. `start.bat` запускает собранное приложение из `dist/PhotoSort-0.2.1`.
 
 ## Рабочий процесс
 
@@ -54,7 +54,7 @@ node --check photosort/web/face-worker.js
 .\packaging\build.ps1
 ```
 
-Сборка создаёт `dist/PhotoSort-0.2.0/PhotoSort.exe`, portable ZIP, контрольные суммы и установщик при наличии Inno Setup 6. Лицензии Rust-зависимостей и комплектов декодеров входят в дистрибутив. Цифровая подпись PhotoSort пока отсутствует.
+Сборка создаёт `dist/PhotoSort-0.2.1/PhotoSort.exe`, portable ZIP, контрольные суммы и установщик при наличии Inno Setup 6. Лицензии Rust-зависимостей и комплектов декодеров входят в дистрибутив. Цифровая подпись PhotoSort пока отсутствует.
 
 Масштабный тест на 100000 записей:
 

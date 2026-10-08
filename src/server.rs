@@ -101,7 +101,9 @@ fn route(library: &Arc<Library>, token: &str, request: &mut Request) -> Result<(
     let get = |name: &str, default: &str| parameters.get(name).cloned().unwrap_or(default.into());
     let value = if *request.method() == Method::Get {
         match path {
-            "/api/session" => json!({"token":token,"version":"0.2.0","engine":"Rust"}),
+            "/api/session" => {
+                json!({"token":token,"version":env!("CARGO_PKG_VERSION"),"engine":"Rust"})
+            }
             "/api/photos" => library.listing(
                 &get("view", "all"),
                 &get("search", ""),
@@ -121,6 +123,12 @@ fn route(library: &Arc<Library>, token: &str, request: &mut Request) -> Result<(
                 return Ok((
                     include_bytes!("../photosort/web/app.js").to_vec(),
                     "text/javascript; charset=utf-8".into(),
+                ));
+            }
+            "/icon.ico" => {
+                return Ok((
+                    include_bytes!("../packaging/photosort.ico").to_vec(),
+                    "image/x-icon".into(),
                 ));
             }
             "/style.css" => {
