@@ -1,4 +1,4 @@
-#define AppVersion "0.2.1"
+#define AppVersion "0.3.0"
 [Setup]
 AppId={{49DBF80E-5227-44E8-B78F-206A578F593B}
 AppName=PhotoSort

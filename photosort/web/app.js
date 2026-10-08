@@ -35,7 +35,9 @@ if (desktopWindow) {
   }
 }
 const titles = {
-  all: "Все фотографии",
+  all: "Все файлы",
+  photos: "Фотографии",
+  videos: "Видео",
   favorites: "Избранное",
   similar: "Похожие кадры",
   bursts: "Серии",
@@ -64,6 +66,11 @@ const state = {
   },
 };
 const number = (value) => Number(value || 0).toLocaleString("ru-RU");
+const duration = (seconds) => {
+  const total = Math.max(0, Math.round(seconds || 0));
+  const hours = Math.floor(total / 3600);
+  return `${hours ? hours + ":" : ""}${String(Math.floor(total / 60) % 60).padStart(hours ? 2 : 1, "0")}:${String(total % 60).padStart(2, "0")}`;
+};
 const size = (value) =>
   value >= 1e9
     ? `${(value / 1e9).toFixed(1)} ГБ`
@@ -213,6 +220,10 @@ function card(photo, index) {
   image.alt = photo.name;
   image.loading = "lazy";
   open.append(image);
+  if (photo.media_kind === "video") {
+    frame.append(element("span", "video-mark", "▶"));
+    frame.append(element("span", "video-duration", duration(photo.duration)));
+  }
   open.onclick = () => {
     state.culling = false;
     state.viewerPhotos = state.displayPhotos;
@@ -262,7 +273,7 @@ function card(photo, index) {
     element(
       "div",
       "photo-detail",
-      `${photo.width} × ${photo.height} · ${date}`,
+      `${photo.width} × ${photo.height}${photo.media_kind === "video" ? ` · ${photo.video_codec.toUpperCase()} · ${Math.round(photo.fps * 10) / 10} fps` : ""} · ${date}`,
     ),
   );
   const hints = [
@@ -304,7 +315,7 @@ async function load() {
       $(`#count-${key}`).textContent = number(data.counts[key]);
     $("#stat-total").replaceChildren(
       document.createTextNode(number(data.counts.all) + " "),
-      element("small", "", "фото"),
+      element("small", "", "файлов"),
     );
     $("#stat-similar").textContent = number(data.counts.similar);
     $("#stat-duplicates").textContent = number(data.counts.duplicates);
@@ -322,12 +333,12 @@ async function load() {
       ? "Всё начинается с одной папки"
       : state.view === "trash"
         ? "Корзина пуста"
-        : "Здесь пока нет фотографий";
+        : "Здесь пока нет файлов";
     $("#empty-description").textContent = first
-      ? "Добавьте фотографии. PhotoSort найдёт похожие кадры, объединит серии и поможет оставить самое ценное."
+      ? "Добавьте фотографии и видео. PhotoSort найдёт дубли и похожие файлы и поможет оставить самое ценное."
       : state.view === "trash"
-        ? "Перемещённые сюда фотографии можно восстановить в исходную папку."
-        : "Попробуйте другой поиск или добавьте фотографии в библиотеку.";
+        ? "Перемещённые сюда файлы можно восстановить в исходную папку."
+        : "Попробуйте другой поиск или добавьте файлы в библиотеку.";
     $("#empty-import").hidden = !first;
     $("#previous").disabled = state.offset === 0;
     $("#next").disabled = state.offset + 80 >= data.total;
@@ -350,7 +361,7 @@ function progress(data) {
   state.running = data.running;
   $("#scan-status").hidden = !data.running && !data.paused;
   $("#scan-text").textContent =
-    `${data.paused ? "На паузе · " : ""}Обработано ${number(data.done)}${data.total ? ` из ${number(data.total)}` : ""} фото`;
+    `${data.paused ? "На паузе · " : ""}Обработано ${number(data.done)}${data.total ? ` из ${number(data.total)}` : ""} файлов`;
   $("#scan-detail").textContent =
     `${data.message}${data.errors ? ` · ошибок: ${data.errors}` : ""}`;
   $("#stop-scan").hidden = !data.running;
@@ -373,7 +384,9 @@ function setView(viewName, save = true) {
     viewName === "all" ? "Коллекция" : titles[viewName];
   const hints = {
     similar:
-      "Визуальное сходство включает перекодирование и небольшую обрезку. Чувствительность можно изменить в настройках. Проверяйте важные детали при сравнении.",
+      "Фото сравниваются по отпечаткам изображения, видео — по трём кадрам и длительности. Сходство — подсказка: проверяйте содержимое перед выбором.",
+    videos:
+      "Видео обрабатывается локально. Если кодек не поддерживается проигрывателем, подготовьте совместимое превью; оригинал останется без изменений.",
     bursts:
       "Кадры из одной папки с интервалом до 8 секунд по EXIF. RAW+JPEG выбираются вместе.",
     duplicates:
@@ -405,6 +418,7 @@ function resetZoom() {
   applyZoom();
 }
 function stageFor(photo) {
+  if (photo.media_kind === "video") return videoFigure(photo);
   const figure = element("figure"),
     stage = element("div", "zoom-stage"),
     image = element("img");
@@ -461,7 +475,103 @@ function stageFor(photo) {
   }
   return figure;
 }
+function stopVideos() {
+  for (const player of document.querySelectorAll("#viewer video")) {
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+  }
+}
+function videoFigure(photo) {
+  const figure = element("figure", "video-figure");
+  const player = element("video", "video-player");
+  player.controls = true;
+  player.preload = "metadata";
+  player.playsInline = true;
+  player.tabIndex = 0;
+  player.setAttribute("aria-label", `Воспроизвести ${photo.name}`);
+  player.poster = `/media/${photo.id}`;
+  player.src = `/video/${photo.id}`;
+  const message = element("p", "video-status", "");
+  message.setAttribute("role", "status");
+  player.onerror = () => {
+    if (figure.isConnected && $("#viewer").open)
+      message.textContent =
+        "Этот кодек не воспроизводится напрямую. Подготовьте совместимое превью ниже.";
+  };
+  const others = () =>
+    $("#sync-video").checked && !$("#video-toolbar").hidden
+      ? [...document.querySelectorAll("#viewer video")].filter(
+          (other) => other !== player,
+        )
+      : [];
+  player.onplay = () => {
+    for (const other of others())
+      if (other.paused) other.play().catch(() => {});
+  };
+  player.onpause = () => {
+    for (const other of others()) if (!other.paused) other.pause();
+  };
+  player.onseeking = () => {
+    if (!Number.isFinite(player.duration) || player.duration <= 0) return;
+    for (const other of others()) {
+      const time = (player.currentTime / player.duration) * other.duration;
+      if (Number.isFinite(time) && Math.abs(other.currentTime - time) > 0.15)
+        other.currentTime = time;
+    }
+  };
+  const compatible = element(
+    "button",
+    "button secondary",
+    "Подготовить совместимое превью",
+  );
+  compatible.title =
+    "Создать временный WebM для проигрывателя. Оригинал не изменяется.";
+  compatible.onclick = () =>
+    action(async () => {
+      compatible.disabled = true;
+      message.textContent =
+        "Готовим видео локально. Для длинного ролика это может занять несколько минут…";
+      try {
+        const result = await api("/api/video-preview", { id: photo.id });
+        if (!figure.isConnected || !$("#viewer").open) return;
+        player.pause();
+        player.src = result.url;
+        player.load();
+        message.textContent =
+          "Совместимое превью готово. Нажмите ▶ для воспроизведения.";
+      } catch (error) {
+        if (figure.isConnected) message.textContent = error.message;
+      } finally {
+        compatible.disabled = false;
+      }
+    });
+  figure.append(
+    player,
+    element(
+      "figcaption",
+      "",
+      `${photo.name} · ${duration(photo.duration)} · ${photo.width} × ${photo.height} · ${photo.video_codec.toUpperCase()} · ${Math.round(photo.fps * 10) / 10} fps`,
+    ),
+    message,
+    compatible,
+  );
+  if (state.comparing) {
+    const keep = element("button", "button secondary", "♡ Оставить этот");
+    keep.onclick = () =>
+      action(async () => {
+        await api("/api/decision", { ids: [photo.id], decision: "keep" });
+        await load();
+        await status();
+        toast(`Сохранён выбор: ${photo.name}`);
+      });
+    figure.append(keep);
+  }
+  return figure;
+}
+$("#viewer").addEventListener("close", stopVideos);
 function showPhotos(photos, index = 0) {
+  stopVideos();
   state.viewerIndex = index;
   state.comparing = photos.length === 2;
   state.openPhotos = photos;
@@ -471,6 +581,11 @@ function showPhotos(photos, index = 0) {
       ? "Сравнение кадров"
       : photos[0].name;
   $("#viewer-images").replaceChildren(...photos.map(stageFor));
+  $(".zoom-toolbar").hidden = photos.some(
+    (photo) => photo.media_kind === "video",
+  );
+  $("#video-toolbar").hidden =
+    photos.length !== 2 || photos.some((photo) => photo.media_kind !== "video");
   $("#viewer-favorite").hidden = state.comparing || state.culling;
   $("#viewer-favorite").textContent = photos[0].favorite
     ? "♥ В избранном"
@@ -582,7 +697,9 @@ async function analyzeEyes() {
     state.selected.size
       ? state.photos.filter((p) => state.selected.has(p.id))
       : state.displayPhotos
-  ).map((p) => p.id);
+  )
+    .filter((p) => p.media_kind !== "video")
+    .map((p) => p.id);
   if (!eyeQueue.length) {
     toast("Выберите фотографии или откройте страницу с кадрами");
     return;
@@ -864,6 +981,14 @@ $("#apply-duplicates").onclick = () =>
 document.addEventListener("keydown", (event) => {
   if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName))
     return;
+  // Let the focused player handle seeking, volume and playback itself.
+  if (
+    document.activeElement?.closest("video") &&
+    ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "Home", "End"].includes(
+      event.key,
+    )
+  )
+    return;
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
     event.preventDefault();
     undo();
@@ -912,7 +1037,7 @@ async function poll() {
       await load();
       if (wasRunning && !p.running) {
         toast(
-          `${p.message}. Фото: ${p.done}. Ошибок: ${p.errors}${p.last_error ? ` — ${p.last_error}` : ""}`,
+          `${p.message}. Файлов: ${p.done}. Ошибок: ${p.errors}${p.last_error ? ` — ${p.last_error}` : ""}`,
         );
         await status();
       }

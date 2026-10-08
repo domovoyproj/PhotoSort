@@ -42,7 +42,7 @@
       </div>
       <a class="brand" href="/"
         ><span class="brand-icon">◈</span>PhotoSort<span class="version"
-          >02</span
+          >03</span
         ></a
       >
       <div class="workspace">
@@ -53,7 +53,13 @@
       <p class="eyebrow side-label">БИБЛИОТЕКА</p>
       <nav id="navigation">
         <button data-view="all" class="nav-item active">
-          <span class="nav-icon">▦</span>Все фотографии<b id="count-all">0</b>
+          <span class="nav-icon">▦</span>Все файлы<b id="count-all">0</b>
+        </button>
+        <button data-view="photos" class="nav-item">
+          <span class="nav-icon">▧</span>Фотографии<b id="count-photos">0</b>
+        </button>
+        <button data-view="videos" class="nav-item">
+          <span class="nav-icon">▷</span>Видео<b id="count-videos">0</b>
         </button>
         <button data-view="favorites" class="nav-item">
           <span class="nav-icon">♡</span>Избранное<b id="count-favorites">0</b>
@@ -98,7 +104,7 @@
     <main>
       <header class="topbar">
         <div class="breadcrumb">
-          Библиотека <span>/</span> <strong id="crumb">Все фотографии</strong>
+          Библиотека <span>/</span> <strong id="crumb">Все файлы</strong>
         </div>
         <div class="top-actions">
           <span class="local-status"><i></i> Rust · Локально</span
@@ -120,9 +126,7 @@
         <div class="page-heading">
           <div>
             <p class="eyebrow">ВАШИ МОМЕНТЫ. БЕЗ ЛИШНЕГО.</p>
-            <h1 id="page-title">
-              Все фотографии<span class="title-dot">.</span>
-            </h1>
+            <h1 id="page-title">Все файлы<span class="title-dot">.</span></h1>
             <p id="subtitle">
               Освободите место для того, что хочется сохранить.
             </p>
@@ -134,7 +138,7 @@
         <div class="stats">
           <div>
             <span>В библиотеке</span
-            ><strong id="stat-total">0 <small>фото</small></strong>
+            ><strong id="stat-total">0 <small>файлов</small></strong>
             <p id="stat-bytes">0 МБ на диске</p>
           </div>
           <div>
@@ -173,14 +177,14 @@
         <div class="collection-toolbar">
           <div class="collection-title">
             <h2 id="collection-name">Коллекция</h2>
-            <span id="total-label">0 фотографий</span>
+            <span id="total-label">0 файлов</span>
           </div>
           <div class="collection-controls">
             <label class="search"
               ><span>⌕</span
               ><input
                 id="search"
-                placeholder="Найти фотографию"
+                placeholder="Найти файл"
                 aria-label="Поиск по имени"
               /><kbd>/</kbd></label
             ><select id="sort" aria-label="Сортировка">
@@ -228,7 +232,9 @@
           </p>
           <button class="button primary" id="empty-import">
             ＋ Выбрать папку</button
-          ><span class="formats">JPG · HEIC · RAW · PNG · WEBP · TIFF</span>
+          ><span class="formats"
+            >JPG · HEIC · RAW · MP4 · MOV · MKV · AVI · WEBM</span
+          >
         </div>
         <footer class="collection-footer">
           <span id="footer-text">Порядок начинается здесь</span>
@@ -258,11 +264,11 @@
         </div>
         <h2>Больше воспоминаний.<br />Меньше беспорядка.</h2>
         <p>
-          Укажите папку — фотографии из вложенных папок попадут в библиотеку.
+          Укажите папку — фото и видео из вложенных папок попадут в библиотеку.
           Незавершённое сканирование можно продолжить после перезапуска.
         </p>
         <label class="field-label" for="folder-path"
-          >Папка с фотографиями</label
+          >Папка с фото и видео</label
         >
         <div class="folder-field">
           <input
@@ -274,7 +280,7 @@
           </button>
         </div>
         <p class="dialog-note" id="codec-note">
-          JPEG · PNG · TIFF · WEBP · HEIC · RAW. RAW+JPEG объединяются при
+          JPEG · PNG · TIFF · WEBP · HEIC · RAW · MP4 · MOV · MKV · AVI · WEBM. RAW+JPEG объединяются при
           выборе и экспорте.
         </p>
         <button class="button primary full-width" type="submit">
@@ -314,6 +320,12 @@
         >
       </div>
       <div id="viewer-images"></div>
+      <div id="video-toolbar" class="video-toolbar" hidden>
+        <label
+          ><input type="checkbox" id="sync-video" checked /> Синхронное
+          воспроизведение и перемотка</label
+        >
+      </div>
       <div id="filmstrip"></div>
       <div id="cull-controls" hidden>
         <span id="group-progress"></span
@@ -448,7 +460,7 @@
           совпадающие имена не перезаписываются.
         </p>
         <button class="button primary full-width">
-          Скопировать фотографии →
+          Скопировать оригиналы →
         </button>
       </form>
     </dialog>

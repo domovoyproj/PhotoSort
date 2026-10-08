@@ -72,11 +72,336 @@ impl Fixture {
     fn db(&self) -> Connection {
         Connection::open(self.library.data.join("library.sqlite3")).unwrap()
     }
+    fn movie(&self, name: &str, seconds: u32) -> PathBuf {
+        let path = self.root.join(name);
+        let result = std::process::Command::new(
+            photosort::video::tool("ffmpeg")
+                .expect("Run packaging/fetch-ffmpeg.ps1 before video tests"),
+        )
+        .args([
+            "-v",
+            "error",
+            "-nostdin",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=15",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000",
+            "-t",
+        ])
+        .arg(seconds.to_string())
+        .args([
+            "-threads",
+            "1",
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "2",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+            "-shortest",
+            "-y",
+        ])
+        .arg(&path)
+        .output()
+        .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        path
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
         self.library.close();
     }
+}
+
+#[test]
+fn media_ranges_cover_seek_suffix_and_invalid_requests() {
+    use photosort::server::byte_range;
+    assert_eq!(byte_range(None, 1000), Some((0, 1000, false)));
+    assert_eq!(
+        byte_range(Some("bytes=100-199"), 1000),
+        Some((100, 100, true))
+    );
+    assert_eq!(byte_range(Some("bytes=900-"), 1000), Some((900, 100, true)));
+    assert_eq!(byte_range(Some("bytes=-100"), 1000), Some((900, 100, true)));
+    assert_eq!(
+        byte_range(Some("bytes=900-9999"), 1000),
+        Some((900, 100, true))
+    );
+    for range in [
+        "bytes=1000-",
+        "bytes=200-100",
+        "bytes=-0",
+        "bytes=1-2,5-6",
+        "items=1-2",
+        "bytes=a-b",
+    ] {
+        assert_eq!(byte_range(Some(range), 1000), None);
+    }
+}
+#[test]
+fn exclusive_copy_preserves_modified_time_and_conflicts() {
+    let f = Fixture::new();
+    let source = f.image("source.jpg", 8);
+    let timestamp = std::time::UNIX_EPOCH + Duration::from_secs(1_500_000_000);
+    fs::File::options()
+        .write(true)
+        .open(&source)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(timestamp))
+        .unwrap();
+    let hash = analysis::fingerprint(&source).unwrap();
+    let target = f.root.join("copy.jpg");
+    photosort::library::copy_exclusive(&source, &target, &hash).unwrap();
+    assert_eq!(
+        fs::metadata(&source).unwrap().modified().unwrap(),
+        fs::metadata(&target).unwrap().modified().unwrap()
+    );
+    assert!(photosort::library::copy_exclusive(&source, &target, &hash).is_err());
+    assert_eq!(analysis::fingerprint(&source).unwrap(), hash);
+    assert_eq!(analysis::fingerprint(&target).unwrap(), hash);
+}
+#[test]
+fn video_cache_cleanup_preserves_unowned_files_and_journal() {
+    let f = Fixture::new();
+    let mut settings = f.library.settings();
+    settings.cache_mb = 64;
+    f.library.save_settings(settings).unwrap();
+    let owned = f
+        .library
+        .thumbs
+        .join(format!("video-{}.webm", "a".repeat(64)));
+    fs::File::create(&owned)
+        .unwrap()
+        .set_len(80 * 1024 * 1024)
+        .unwrap();
+    let unowned = f.library.thumbs.join("personal.webm");
+    fs::write(&unowned, b"keep").unwrap();
+    let note = f.library.data.join("journal-note");
+    fs::write(&note, b"keep").unwrap();
+    f.library.trim_cache().unwrap();
+    assert!(!owned.exists());
+    assert_eq!(fs::read(unowned).unwrap(), b"keep");
+    assert!(note.exists());
+    assert!(f.library.data.join("library.sqlite3").exists());
+}
+#[test]
+#[ignore = "Requires bundled FFmpeg; release pipeline runs this test"]
+fn video_import_groups_export_trash_and_conflict_restore() {
+    let f = Fixture::new();
+    let source = f.movie("clip.MP4", 3);
+    fs::copy(&source, f.root.join("duplicate.mp4")).unwrap();
+    let recode = f.root.join("reencoded.avi");
+    let result = std::process::Command::new(photosort::video::tool("ffmpeg").unwrap())
+        .args(["-v", "error", "-nostdin", "-i"])
+        .arg(&source)
+        .args(["-c:v", "mpeg4", "-q:v", "5", "-threads", "1", "-y"])
+        .arg(&recode)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    f.movie("longer.mp4", 6);
+    f.image("clip.jpg", 7);
+    f.scan();
+    assert_eq!(f.photos("videos").len(), 4);
+    assert_eq!(f.photos("photos").len(), 1);
+    assert_eq!(f.photos("duplicates").len(), 2);
+    let videos = f.photos("videos");
+    let clip = videos.iter().find(|p| p["name"] == "clip.MP4").unwrap();
+    let id = clip["id"].as_i64().unwrap();
+    assert_eq!(clip["media_kind"], "video");
+    assert_eq!(clip["width"], 320);
+    assert_eq!(clip["height"], 180);
+    assert!((clip["duration"].as_f64().unwrap() - 3.0).abs() < 0.1);
+    assert_eq!(clip["video_codec"], "mpeg4");
+    assert_eq!(f.photos("similar").len(), 3);
+    assert!(f.photos("bursts").is_empty());
+    let expected = analysis::fingerprint(&source).unwrap();
+    let exported = f.root.parent().unwrap().join("export");
+    f.library
+        .export(&[id], exported.to_str().unwrap(), false)
+        .unwrap();
+    assert_eq!(
+        analysis::fingerprint(&exported.join("clip.MP4")).unwrap(),
+        expected
+    );
+    assert_ne!(
+        photosort::library::asset_key(&source),
+        photosort::library::asset_key(&f.root.join("clip.jpg"))
+    );
+    assert_eq!(f.library.move_photos(&[id], false).unwrap().done, vec![id]);
+    assert!(!source.exists());
+    let trash = f.library.video_source(id, false).unwrap();
+    assert_eq!(analysis::fingerprint(&trash).unwrap(), expected);
+    fs::write(&source, b"existing file").unwrap();
+    assert_eq!(f.library.move_photos(&[id], true).unwrap().errors.len(), 1);
+    assert_eq!(fs::read(&source).unwrap(), b"existing file");
+    assert!(trash.exists());
+    fs::remove_file(&source).unwrap();
+    assert_eq!(f.library.undo().unwrap().done, vec![id]);
+    assert_eq!(analysis::fingerprint(&source).unwrap(), expected);
+    f.scan();
+    assert_eq!(f.photos("videos").len(), 4);
+    assert_eq!(f.library.photo(id).unwrap().id, id);
+}
+fn video_request(host: &str, method: &str, path: &str, range: Option<&str>) -> (String, Vec<u8>) {
+    let mut connection = std::net::TcpStream::connect(host).unwrap();
+    connection
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let range = range.map(|r| format!("Range: {r}\r\n")).unwrap_or_default();
+    write!(
+        connection,
+        "{method} {path} HTTP/1.1\r\nHost: {host}\r\n{range}Connection: close\r\n\r\n"
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    connection.read_to_end(&mut bytes).unwrap();
+    let boundary = bytes.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    (
+        String::from_utf8(bytes[..boundary].to_vec()).unwrap(),
+        bytes[boundary + 4..].to_vec(),
+    )
+}
+#[test]
+#[ignore = "Requires bundled FFmpeg; release pipeline runs this test"]
+fn video_compatible_preview_and_http_seek_do_not_modify_original() {
+    let f = Fixture::new();
+    let source = f.movie("clip.mp4", 3);
+    f.scan();
+    let photo = f
+        .library
+        .photo(f.photos("videos")[0]["id"].as_i64().unwrap())
+        .unwrap();
+    let original = fs::read(&source).unwrap();
+    let before = fs::metadata(&source).unwrap().modified().unwrap();
+    let url = photosort::server::serve(f.library.clone(), 0).unwrap();
+    let host = url.trim_start_matches("http://");
+    let route = format!("/video/{}", photo.id);
+    let (head, body) = video_request(host, "GET", &route, Some("bytes=10-137"));
+    assert!(head.starts_with("HTTP/1.1 206"));
+    assert_eq!(body, &original[10..138]);
+    assert!(head.to_lowercase().contains("content-range: bytes 10-137/"));
+    let (head, body) = video_request(host, "HEAD", &route, None);
+    assert!(head.starts_with("HTTP/1.1 200"));
+    assert!(body.is_empty());
+    let (head, _) = video_request(host, "GET", &route, Some("bytes=999999999-"));
+    assert!(head.starts_with("HTTP/1.1 416"));
+    let preview = f.library.video_source(photo.id, true).unwrap();
+    let metadata = photosort::video::metadata(&preview, &f.library.data.join("scratch")).unwrap();
+    assert_eq!(metadata.codec, "vp8");
+    assert!((metadata.duration - photo.duration).abs() < 0.25);
+    assert!(metadata.width <= 1280);
+    let preview_bytes = fs::read(&preview).unwrap();
+    let (head, body) = video_request(
+        host,
+        "GET",
+        &format!("{route}?compatible=1"),
+        Some("bytes=-128"),
+    );
+    assert!(head.starts_with("HTTP/1.1 206"));
+    assert_eq!(body, &preview_bytes[preview_bytes.len() - 128..]);
+    assert_eq!(f.library.video_source(photo.id, true).unwrap(), preview);
+    assert_eq!(fs::read(&source).unwrap(), original);
+    assert_eq!(fs::metadata(&source).unwrap().modified().unwrap(), before);
+    assert!(
+        fs::read_dir(&f.library.thumbs).unwrap().all(|e| e
+            .unwrap()
+            .path()
+            .extension()
+            .and_then(|s| s.to_str())
+            != Some("part"))
+    );
+}
+#[test]
+#[ignore = "Requires bundled FFmpeg; release pipeline runs this test"]
+fn video_corrupt_input_and_pause_resume_preserve_index() {
+    let f = Fixture::new();
+    f.movie("clip.mp4", 3);
+    f.scan();
+    let id = f.photos("videos")[0]["id"].as_i64().unwrap();
+    f.library.start(f.root.to_str().unwrap(), false).unwrap();
+    f.library.pause();
+    f.wait();
+    assert!(f.library.progress.lock().paused);
+    f.library.start("", true).unwrap();
+    f.wait();
+    assert_eq!(f.photos("videos")[0]["id"], id);
+    fs::write(f.root.join("broken.mov"), b"invalid container").unwrap();
+    f.library.start(f.root.to_str().unwrap(), false).unwrap();
+    f.wait();
+    assert_eq!(f.library.progress.lock().errors, 1);
+    assert_eq!(f.photos("videos").len(), 1);
+    assert!(
+        fs::read_dir(f.library.data.join("scratch"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
+    let destination = f.library.data.join("cancelled.webm");
+    assert!(
+        photosort::video::transcode(&f.root.join("clip.mp4"), &destination, 1024 * 1024, || true)
+            .is_err()
+    );
+    assert!(f.root.join("clip.mp4").exists());
+}
+
+#[test]
+#[ignore = "Requires bundled FFmpeg; release pipeline runs this test"]
+fn video_slow_streams_leave_control_api_responsive() {
+    let f = Fixture::new();
+    let source = f.movie("clip.mp4", 3);
+    f.scan();
+    let id = f.photos("videos")[0]["id"].as_i64().unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&source)
+        .unwrap()
+        .set_len(1024 * 1024 * 1024)
+        .unwrap();
+    let meta = fs::metadata(&source).unwrap();
+    f.db()
+        .execute(
+            "UPDATE photos SET size=?,mtime=? WHERE id=?",
+            params![meta.len() as i64, photosort::library::modified(&meta), id],
+        )
+        .unwrap();
+    let url = photosort::server::serve(f.library.clone(), 0).unwrap();
+    let host = url.trim_start_matches("http://");
+    let mut clients = Vec::new();
+    for _ in 0..6 {
+        let mut stream = std::net::TcpStream::connect(host).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        write!(stream, "GET /video/{id} HTTP/1.1\r\nHost: {host}\r\n\r\n").unwrap();
+        let mut first = [0u8; 1024];
+        let count = stream.read(&mut first).unwrap();
+        assert!(String::from_utf8_lossy(&first[..count]).starts_with("HTTP/1.1 200"));
+        clients.push(stream);
+    }
+    let started = Instant::now();
+    let (header, body) = video_request(host, "GET", "/api/status", None);
+    assert!(header.starts_with("HTTP/1.1 200"));
+    assert!(started.elapsed() < Duration::from_secs(5));
+    let value: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(value["engine"], "Rust");
+    drop(clients);
+    thread::sleep(Duration::from_millis(100));
 }
 #[test]
 fn duplicates_and_incremental_scan() {

@@ -25,6 +25,7 @@ pub fn supported(path: &Path) -> bool {
         extension(path).as_str(),
         "jpg" | "jpeg" | "png" | "webp" | "tif" | "tiff" | "bmp" | "heic" | "heif" | "avif"
     ) || RAW.contains(&extension(path).as_str())
+        || crate::video::is_video(path)
 }
 pub fn fingerprint(path: &Path) -> Result<String> {
     let mut source = BufReader::with_capacity(1024 * 1024, File::open(path)?);
@@ -54,7 +55,14 @@ pub fn decoder_path() -> Option<PathBuf> {
     .into_iter()
     .find(|p| p.is_file())
 }
-fn command_output(mut command: Command, seconds: u64) -> Result<()> {
+pub(crate) fn command_output(command: Command, seconds: u64) -> Result<()> {
+    command_output_until(command, seconds, || false)
+}
+pub(crate) fn command_output_until(
+    mut command: Command,
+    seconds: u64,
+    cancel: impl Fn() -> bool,
+) -> Result<()> {
     command.stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
     {
@@ -64,9 +72,14 @@ fn command_output(mut command: Command, seconds: u64) -> Result<()> {
     let mut child = command.spawn()?;
     let started = Instant::now();
     loop {
+        if cancel() {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("Подготовка видео отменена");
+        }
         if let Some(status) = child.try_wait()? {
             if !status.success() {
-                bail!("Декодер не смог прочитать изображение")
+                bail!("Декодер не смог прочитать файл")
             }
             return Ok(());
         }
@@ -115,8 +128,12 @@ pub struct Description {
     pub sharpness: f64,
     pub brightness: f64,
     pub quality_hint: String,
+    pub media_kind: String,
+    pub duration: f64,
+    pub fps: f64,
+    pub video_codec: String,
 }
-fn hashes(image: &DynamicImage) -> (u64, u64) {
+pub(crate) fn hashes(image: &DynamicImage) -> (u64, u64) {
     let gray = image.resize_exact(9, 8, FilterType::Triangle).to_luma8();
     let mut d = 0;
     for y in 0..8 {
@@ -134,6 +151,9 @@ fn hashes(image: &DynamicImage) -> (u64, u64) {
     (d, a)
 }
 pub fn describe(path: &Path, thumb: &Path, scratch: &Path) -> Result<Description> {
+    if crate::video::is_video(path) {
+        return crate::video::describe(path, thumb, scratch);
+    }
     let metadata = File::open(path).ok().and_then(|file| {
         exif::Reader::new()
             .read_from_container(&mut BufReader::new(file))
@@ -170,6 +190,13 @@ pub fn describe(path: &Path, thumb: &Path, scratch: &Path) -> Result<Description
     {
         image = orient(image, orientation)
     }
+    describe_image(image, thumb, captured)
+}
+pub(crate) fn describe_image(
+    image: DynamicImage,
+    thumb: &Path,
+    captured: Option<f64>,
+) -> Result<Description> {
     let (width, height) = image.dimensions();
     let (dhash, ahash) = hashes(&image);
     let crop = image.crop_imm(
@@ -235,6 +262,10 @@ pub fn describe(path: &Path, thumb: &Path, scratch: &Path) -> Result<Description
         sharpness,
         brightness,
         quality_hint: reasons.join(" · "),
+        media_kind: "photo".into(),
+        duration: 0.0,
+        fps: 0.0,
+        video_codec: String::new(),
     })
 }
 pub fn orient(image: DynamicImage, orientation: u32) -> DynamicImage {
@@ -250,6 +281,13 @@ pub fn orient(image: DynamicImage, orientation: u32) -> DynamicImage {
     }
 }
 pub fn preview(path: &Path, scratch: &Path) -> Result<Vec<u8>> {
+    if crate::video::is_video(path) {
+        let metadata = crate::video::metadata(path, scratch)?;
+        let image = crate::video::frame(path, scratch, metadata.duration * 0.5)?.to_rgb8();
+        let mut bytes = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 94).encode_image(&image)?;
+        return Ok(bytes);
+    }
     let metadata = File::open(path).ok().and_then(|f| {
         exif::Reader::new()
             .read_from_container(&mut BufReader::new(f))

@@ -19,7 +19,7 @@ use std::{
 };
 
 const ACTIVE: &str = "trash IS NULL AND missing=0";
-const COLUMNS: &str = "id,path,root,name,size,mtime,width,height,captured,hash,dhash,sharpness,favorite,trash,missing,similar,burst,decision,reviewed,quality_hint,faces,eye_score,asset_group,brightness";
+const COLUMNS: &str = "id,path,root,name,size,mtime,width,height,captured,hash,dhash,sharpness,favorite,trash,missing,similar,burst,decision,reviewed,quality_hint,faces,eye_score,asset_group,brightness,media_kind,duration,fps,video_codec";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Photo {
     pub id: i64,
@@ -46,6 +46,10 @@ pub struct Photo {
     pub eye_score: Option<f64>,
     pub asset_group: String,
     pub brightness: f64,
+    pub media_kind: String,
+    pub duration: f64,
+    pub fps: f64,
+    pub video_codec: String,
 }
 fn photo_row(r: &Row) -> rusqlite::Result<Photo> {
     Ok(Photo {
@@ -73,6 +77,10 @@ fn photo_row(r: &Row) -> rusqlite::Result<Photo> {
         eye_score: r.get(21)?,
         asset_group: r.get(22)?,
         brightness: r.get(23)?,
+        media_kind: r.get(24)?,
+        duration: r.get(25)?,
+        fps: r.get(26)?,
+        video_codec: r.get(27)?,
     })
 }
 #[derive(Clone, Default, Serialize)]
@@ -144,6 +152,7 @@ pub struct Library {
     version: AtomicU64,
     cache_writes: AtomicU64,
     cache_trim: Mutex<()>,
+    video_preview: Mutex<()>,
     counts: Mutex<(u64, Value)>,
 }
 
@@ -178,6 +187,10 @@ impl Library {
             ("faces", "INTEGER"),
             ("eye_score", "REAL"),
             ("asset_group", "TEXT DEFAULT ''"),
+            ("media_kind", "TEXT NOT NULL DEFAULT 'photo'"),
+            ("duration", "REAL NOT NULL DEFAULT 0"),
+            ("fps", "REAL NOT NULL DEFAULT 0"),
+            ("video_codec", "TEXT NOT NULL DEFAULT ''"),
         ] {
             if !columns.contains(name) {
                 db.execute_batch(&format!(
@@ -212,6 +225,7 @@ impl Library {
             version: AtomicU64::new(1),
             cache_writes: AtomicU64::new(0),
             cache_trim: Mutex::new(()),
+            video_preview: Mutex::new(()),
             counts: Mutex::new((0, json!({}))),
         });
         library.recover()?;
@@ -312,6 +326,7 @@ impl Library {
         if let Some(handle) = self.worker.lock().take() {
             let _ = handle.join();
         }
+        let _video = self.video_preview.lock();
         let (job, root) = if resume {
             let db = self.db.lock();
             db.query_row(
@@ -493,7 +508,7 @@ impl Library {
                         Ok(description) => {
                             let db = self.db.lock();
                             if let Some((hash, size, mtime, d)) = description {
-                                db.execute("INSERT INTO photos(path,root,name,size,mtime,width,height,captured,hash,dhash,sharpness,seen,ahash,crop_hash,brightness,quality_hint,asset_group) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET root=excluded.root,name=excluded.name,size=excluded.size,mtime=excluded.mtime,width=excluded.width,height=excluded.height,captured=excluded.captured,hash=excluded.hash,dhash=excluded.dhash,sharpness=excluded.sharpness,seen=excluded.seen,ahash=excluded.ahash,crop_hash=excluded.crop_hash,brightness=excluded.brightness,quality_hint=excluded.quality_hint,asset_group=excluded.asset_group,missing=0,faces=NULL,eye_score=NULL",params![path,root.to_string_lossy(),Path::new(path).file_name().unwrap_or_default().to_string_lossy(),size,mtime,d.width,d.height,d.captured,hash,d.dhash,d.sharpness,generation,d.ahash,d.crop_hash,d.brightness,d.quality_hint,asset_key(Path::new(path))])?;
+                                db.execute("INSERT INTO photos(path,root,name,size,mtime,width,height,captured,hash,dhash,sharpness,seen,ahash,crop_hash,brightness,quality_hint,asset_group,media_kind,duration,fps,video_codec) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET root=excluded.root,name=excluded.name,size=excluded.size,mtime=excluded.mtime,width=excluded.width,height=excluded.height,captured=excluded.captured,hash=excluded.hash,dhash=excluded.dhash,sharpness=excluded.sharpness,seen=excluded.seen,ahash=excluded.ahash,crop_hash=excluded.crop_hash,brightness=excluded.brightness,quality_hint=excluded.quality_hint,asset_group=excluded.asset_group,media_kind=excluded.media_kind,duration=excluded.duration,fps=excluded.fps,video_codec=excluded.video_codec,missing=0,faces=NULL,eye_score=NULL",params![path,root.to_string_lossy(),Path::new(path).file_name().unwrap_or_default().to_string_lossy(),size,mtime,d.width,d.height,d.captured,hash,d.dhash,d.sharpness,generation,d.ahash,d.crop_hash,d.brightness,d.quality_hint,asset_key(Path::new(path)),d.media_kind,d.duration,d.fps,d.video_codec])?;
                             } else {
                                 db.execute("UPDATE photos SET seen=?,missing=0 WHERE path=? AND trash IS NULL",params![generation,path])?;
                             }
@@ -611,9 +626,20 @@ impl Library {
     }
     pub fn group(&self) -> Result<()> {
         let sensitivity = self.settings().sensitivity;
-        let rows: Vec<(i64, String, Option<f64>, u32, u32, String, String, String)> = {
+        let rows: Vec<(
+            i64,
+            String,
+            Option<f64>,
+            u32,
+            u32,
+            String,
+            String,
+            String,
+            String,
+            f64,
+        )> = {
             let db = self.db.lock();
-            let mut statement=db.prepare(&format!("SELECT id,path,captured,width,height,dhash,ahash,crop_hash FROM photos WHERE {ACTIVE} ORDER BY captured,id"))?;
+            let mut statement=db.prepare(&format!("SELECT id,path,captured,width,height,dhash,ahash,crop_hash,media_kind,duration FROM photos WHERE {ACTIVE} ORDER BY captured,id"))?;
             statement
                 .query_map([], |r| {
                     Ok((
@@ -625,6 +651,8 @@ impl Library {
                         r.get(5)?,
                         r.get(6)?,
                         r.get(7)?,
+                        r.get(8)?,
+                        r.get(9)?,
                     ))
                 })?
                 .collect::<rusqlite::Result<_>>()?
@@ -632,10 +660,13 @@ impl Library {
         let mut tree = HammingIndex::new(sensitivity);
         let mut averages = HammingIndex::new(sensitivity.saturating_sub(2));
         let mut cropped = HammingIndex::new(sensitivity.saturating_sub(2));
-        let mut representatives = HashMap::<i64, (f64, u64, u64, u64)>::new();
+        let mut representatives = HashMap::<i64, (f64, u64, u64, u64, bool, f64)>::new();
         let mut previous = HashMap::<PathBuf, (f64, i64)>::new();
         let mut assignments = Vec::with_capacity(rows.len());
-        for (index, (id, path, captured, w, h, d, a, c)) in rows.into_iter().enumerate() {
+        for (index, (id, path, captured, w, h, d, a, c, kind, duration)) in
+            rows.into_iter().enumerate()
+        {
+            let video = kind == "video";
             if index % 256 == 0 && self.stopped() && self.progress.lock().running {
                 bail!("Группировка приостановлена");
             }
@@ -652,14 +683,22 @@ impl Library {
             let mut similar = id;
             let mut best = 100;
             for candidate in candidates {
-                let (r, rd, ra, rc) = representatives[&candidate];
+                let (r, rd, ra, rc, candidate_video, candidate_duration) =
+                    representatives[&candidate];
                 let ds = (d ^ rd).count_ones();
                 let av = (a ^ ra).count_ones();
                 let cr = (c ^ rc).count_ones();
-                if (ratio - r).abs() < 0.18
-                    && ((ds <= sensitivity && av <= sensitivity + 4)
-                        || (cr <= sensitivity.saturating_sub(2) && av <= sensitivity + 2))
-                {
+                let close = if video {
+                    (duration - candidate_duration).abs()
+                        <= (duration.min(candidate_duration) * 0.05).max(0.25)
+                        && ds <= sensitivity
+                        && av <= sensitivity
+                        && cr <= sensitivity
+                } else {
+                    (ds <= sensitivity && av <= sensitivity + 4)
+                        || (cr <= sensitivity.saturating_sub(2) && av <= sensitivity + 2)
+                };
+                if video == candidate_video && (ratio - r).abs() < 0.18 && close {
                     let score = ds + av + cr;
                     if score < best {
                         similar = candidate;
@@ -671,13 +710,13 @@ impl Library {
                 tree.add(d, id);
                 averages.add(a, id);
                 cropped.add(c, id);
-                representatives.insert(id, (ratio, d, a, c));
+                representatives.insert(id, (ratio, d, a, c, video, duration));
             }
             let folder = Path::new(&path)
                 .parent()
                 .unwrap_or(Path::new(""))
                 .to_path_buf();
-            let burst = if let Some(time) = captured {
+            let burst = if let Some(time) = captured.filter(|_| !video) {
                 let burst = previous
                     .get(&folder)
                     .filter(|(old, _)| time - *old >= 0.0 && time - *old <= 8.0)
@@ -717,6 +756,8 @@ impl Library {
             ("favorites", format!("{ACTIVE} AND favorite=1")),
             ("trash", "trash IS NOT NULL".into()),
             ("pending", format!("{ACTIVE} AND reviewed=0")),
+            ("videos", format!("{ACTIVE} AND media_kind='video'")),
+            ("photos", format!("{ACTIVE} AND media_kind='photo'")),
         ] {
             let count: i64 = db.query_row(
                 &format!("SELECT COUNT(*) FROM photos WHERE {condition}"),
@@ -757,6 +798,8 @@ impl Library {
             "trash" => "trash IS NOT NULL".into(),
             "favorites" => format!("{ACTIVE} AND favorite=1"),
             "pending" => format!("{ACTIVE} AND reviewed=0"),
+            "videos" => format!("{ACTIVE} AND media_kind='video'"),
+            "photos" => format!("{ACTIVE} AND media_kind='photo'"),
             _ => ACTIVE.to_string(),
         };
         if let Some(field) = field {
@@ -1275,14 +1318,72 @@ impl Library {
         }
         Ok(bytes)
     }
+    pub fn video_source(&self, id: i64, compatible: bool) -> Result<PathBuf> {
+        let photo = self.photo(id)?;
+        if photo.media_kind != "video" || photo.missing {
+            bail!("Видео недоступно");
+        }
+        let source = PathBuf::from(photo.trash.as_deref().unwrap_or(&photo.path));
+        let before = fs::metadata(&source)?;
+        if before.len() != photo.size as u64 || modified(&before) != photo.mtime {
+            bail!("Видео изменилось. Повторите импорт папки");
+        }
+        if !compatible {
+            return Ok(source);
+        }
+        let _guard = self.video_preview.lock();
+        if self.is_closed() {
+            bail!("Приложение закрывается");
+        }
+        let target = self.thumbs.join(format!("video-{}.webm", photo.hash));
+        if target.is_file() {
+            return Ok(target);
+        }
+        self.trim_cache()?;
+        let temporary = self
+            .thumbs
+            .join(format!("video-{}.part", uuid::Uuid::new_v4()));
+        let budget = (self.settings().cache_mb * 1024 * 1024 * 3 / 4).min(512 * 1024 * 1024);
+        let result = (|| -> Result<()> {
+            crate::video::transcode(&source, &temporary, budget, || self.is_closed())?;
+            let metadata = crate::video::metadata(&temporary, &self.data.join("scratch"))?;
+            if metadata.duration + 0.25 < photo.duration || fs::metadata(&temporary)?.len() > budget
+            {
+                bail!(
+                    "Ролик слишком большой для совместимого превью. Увеличьте лимит кеша или используйте внешний проигрыватель"
+                );
+            }
+            let after = fs::metadata(&source)?;
+            if after.len() != before.len() || modified(&after) != modified(&before) {
+                bail!("Видео изменилось во время подготовки");
+            }
+            fs::rename(&temporary, &target)?;
+            Ok(())
+        })();
+        let _ = fs::remove_file(temporary);
+        result?;
+        self.trim_cache_except(Some(&target))?;
+        Ok(target)
+    }
     pub fn trim_cache(&self) -> Result<Value> {
+        self.trim_cache_except(None)
+    }
+    fn trim_cache_except(&self, protected: Option<&Path>) -> Result<Value> {
         let _guard = self.cache_trim.lock();
         let budget = self.settings().cache_mb * 1024 * 1024;
         let mut files = Vec::new();
         let mut bytes = 0;
         for entry in fs::read_dir(&self.thumbs)? {
             let entry = entry?;
-            if entry.path().extension().and_then(|ext| ext.to_str()) != Some("jpg") {
+            let owned_video = entry.file_name().to_str().is_some_and(|name| {
+                name.strip_prefix("video-")
+                    .and_then(|s| s.strip_suffix(".webm"))
+                    .is_some_and(|hash| {
+                        hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
+                    })
+            });
+            if entry.path().extension().and_then(|ext| ext.to_str()) != Some("jpg") && !owned_video
+            {
                 continue;
             }
             let meta = entry.metadata()?;
@@ -1301,7 +1402,15 @@ impl Library {
             if bytes <= budget {
                 break;
             }
-            fs::remove_file(path)?;
+            if protected == Some(path.as_path()) {
+                continue;
+            }
+            if let Err(error) = fs::remove_file(&path) {
+                if error.kind() == std::io::ErrorKind::PermissionDenied {
+                    continue;
+                }
+                return Err(error.into());
+            }
             bytes = bytes.saturating_sub(size);
             removed += 1
         }
@@ -1324,7 +1433,7 @@ impl Library {
             )
             .ok();
         Ok(
-            json!({"version":"0.2.0","engine":"Rust","settings":self.settings(),"roots":roots,"undo":undo,"progress":self.progress.lock().clone(),"codecs":analysis::decoder_path().is_some()}),
+            json!({"version":env!("CARGO_PKG_VERSION"),"engine":"Rust","settings":self.settings(),"roots":roots,"undo":undo,"progress":self.progress.lock().clone(),"codecs":analysis::decoder_path().is_some(),"video_codecs":crate::video::tool("ffmpeg").is_some() && crate::video::tool("ffprobe").is_some()}),
         )
     }
 }
@@ -1344,6 +1453,9 @@ fn canonical_path(path: &Path) -> Result<PathBuf> {
     Ok(resolved)
 }
 pub fn asset_key(path: &Path) -> String {
+    if crate::video::is_video(path) {
+        return format!("video:{}", path.to_string_lossy().to_lowercase());
+    }
     format!(
         "{}/{}",
         path.parent()
@@ -1380,6 +1492,7 @@ pub fn copy_exclusive(source: &Path, target: &Path, expected: &str) -> Result<()
             }
             output.write_all(&block[..size])?
         }
+        output.set_times(fs::FileTimes::new().set_modified(input.metadata()?.modified()?))?;
         output.sync_all()?;
         drop(output);
         if analysis::fingerprint(target)? != expected {

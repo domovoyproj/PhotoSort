@@ -5,9 +5,12 @@ use crate::{
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 use std::{
-    io::Read,
+    io::{Read, Seek, SeekFrom},
     path::{Component, Path},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     thread,
 };
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
@@ -19,12 +22,14 @@ pub fn serve(library: Arc<Library>, port: u16) -> Result<String> {
     let host = address.to_string();
     let url = format!("http://{host}");
     let token = uuid::Uuid::new_v4().to_string() + &uuid::Uuid::new_v4().to_string();
+    let streams = Arc::new(AtomicUsize::new(0));
     // Bounded request workers prevent full-resolution previews exhausting memory.
     for _ in 0..4 {
         let server = server.clone();
         let library = library.clone();
         let token = token.clone();
         let host = host.clone();
+        let streams = streams.clone();
         thread::spawn(move || {
             loop {
                 if library.is_closed() {
@@ -54,6 +59,32 @@ pub fn serve(library: Arc<Library>, port: u16) -> Result<String> {
                     );
                     continue;
                 }
+                if request.url().starts_with("/video/") {
+                    match video_response(&library, &request) {
+                        Ok(response) => {
+                            if let Some(slot) = StreamSlot::reserve(&streams) {
+                                thread::spawn(move || {
+                                    let _slot = slot;
+                                    let _ = request.respond(response);
+                                });
+                            } else {
+                                respond(
+                                    request,
+                                    b"{\"error\":\"Too many video streams\"}".to_vec(),
+                                    "application/json",
+                                    503,
+                                );
+                            }
+                        }
+                        Err(error) => respond(
+                            request,
+                            serde_json::to_vec(&json!({"error":error.to_string()})).unwrap(),
+                            "application/json",
+                            400,
+                        ),
+                    }
+                    continue;
+                }
                 let result = route(&library, &token, &mut request);
                 match result {
                     Ok((bytes, mime)) => respond(request, bytes, &mime, 200),
@@ -68,6 +99,122 @@ pub fn serve(library: Arc<Library>, port: u16) -> Result<String> {
         });
     }
     Ok(url)
+}
+struct StreamSlot(Arc<AtomicUsize>);
+impl StreamSlot {
+    fn reserve(streams: &Arc<AtomicUsize>) -> Option<Self> {
+        let mut count = streams.load(Ordering::Relaxed);
+        while count < 6 {
+            match streams.compare_exchange_weak(
+                count,
+                count + 1,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Some(Self(streams.clone())),
+                Err(current) => count = current,
+            }
+        }
+        None
+    }
+}
+impl Drop for StreamSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+fn video_response(library: &Library, request: &Request) -> Result<Response<Box<dyn Read + Send>>> {
+    if !matches!(*request.method(), Method::Get | Method::Head) {
+        bail!("Метод не поддерживается");
+    }
+    let url = url::Url::parse(&format!("http://127.0.0.1{}", request.url()))?;
+    let id: i64 = url
+        .path()
+        .strip_prefix("/video/")
+        .context_or("Нет видео")?
+        .parse()?;
+    let compatible = url
+        .query_pairs()
+        .any(|(key, value)| key == "compatible" && value == "1");
+    // GET never launches an expensive encode or writes new files.
+    let photo = library.photo(id)?;
+    let path = if compatible {
+        if photo.media_kind != "video" || photo.missing {
+            bail!("Видео недоступно");
+        }
+        let path = library.thumbs.join(format!("video-{}.webm", photo.hash));
+        if !path.is_file() {
+            bail!("Сначала подготовьте совместимое превью");
+        }
+        path
+    } else {
+        library.video_source(id, false)?
+    };
+    let mut file = std::fs::File::open(&path)?;
+    let total = file.metadata()?.len();
+    let range = request
+        .headers()
+        .iter()
+        .find(|header| header.field.equiv("Range"))
+        .map(|header| header.value.as_str());
+    let selection = byte_range(range, total);
+    let mut headers = vec![
+        Header::from_bytes("Content-Type", crate::video::mime(&path)).unwrap(),
+        Header::from_bytes("Accept-Ranges", "bytes").unwrap(),
+        Header::from_bytes("Cache-Control", "no-store").unwrap(),
+        Header::from_bytes("X-Content-Type-Options", "nosniff").unwrap(),
+    ];
+    let (start, length, partial) = match selection {
+        Some(selection) => selection,
+        None => {
+            headers.push(Header::from_bytes("Content-Range", format!("bytes */{total}")).unwrap());
+            return Ok(Response::new(
+                StatusCode(416),
+                headers,
+                Box::new(std::io::empty()),
+                Some(0),
+                None,
+            ));
+        }
+    };
+    if partial {
+        headers.push(
+            Header::from_bytes(
+                "Content-Range",
+                format!("bytes {start}-{}/{total}", start + length - 1),
+            )
+            .unwrap(),
+        );
+    }
+    file.seek(SeekFrom::Start(start))?;
+    let reader: Box<dyn Read + Send> = Box::new(file.take(length));
+    Ok(Response::new(
+        StatusCode(if partial { 206 } else { 200 }),
+        headers,
+        reader,
+        Some(usize::try_from(length)?),
+        None,
+    ))
+}
+pub fn byte_range(range: Option<&str>, total: u64) -> Option<(u64, u64, bool)> {
+    let Some(range) = range else {
+        return Some((0, total, false));
+    };
+    let (start, end) = range.strip_prefix("bytes=")?.split_once('-')?;
+    if total == 0 || end.contains(',') {
+        return None;
+    }
+    if start.is_empty() {
+        let suffix = end.parse::<u64>().ok()?.min(total);
+        return (suffix > 0).then_some((total - suffix, suffix, true));
+    }
+    let start = start.parse::<u64>().ok()?;
+    let end = if end.is_empty() {
+        total - 1
+    } else {
+        end.parse::<u64>().ok()?.min(total - 1)
+    };
+    (start < total && end >= start).then_some((start, end.saturating_sub(start) + 1, true))
 }
 fn respond(request: Request, bytes: Vec<u8>, mime: &str, status: u16) {
     let response=Response::from_data(bytes).with_status_code(StatusCode(status)).with_header(Header::from_bytes("Content-Type",mime).unwrap()).with_header(Header::from_bytes("Cache-Control","no-store").unwrap()).with_header(Header::from_bytes("X-Content-Type-Options","nosniff").unwrap()).with_header(Header::from_bytes("Content-Security-Policy","default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; frame-ancestors 'none'").unwrap());
@@ -246,6 +393,11 @@ fn route(library: &Arc<Library>, token: &str, request: &mut Request) -> Result<(
                 json!({"ok":true})
             }
             "/api/cache" => library.trim_cache()?,
+            "/api/video-preview" => {
+                let id = body["id"].as_i64().context_or("Нет видео")?;
+                library.video_source(id, true)?;
+                json!({"url":format!("/video/{id}?compatible=1")})
+            }
             "/api/eyes" => {
                 library.eyes(
                     body["id"].as_i64().context_or("Нет фотографии")?,
