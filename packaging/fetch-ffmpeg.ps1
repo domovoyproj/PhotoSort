@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $manifest = Get-Content (Join-Path $PSScriptRoot 'ffmpeg.json') -Raw | ConvertFrom-Json
 $toolRoot = Join-Path $projectRoot '.photosort\tools'
+New-Item -ItemType Directory -Force $toolRoot | Out-Null
 $destination = Join-Path $toolRoot 'ffmpeg'
 if (Test-Path (Join-Path $destination 'ffmpeg.exe')) { return }
 $archive = Join-Path $toolRoot 'ffmpeg-lgpl.zip'
